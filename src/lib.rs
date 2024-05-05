@@ -1,17 +1,15 @@
+#![feature(unboxed_closures)]
 #![warn(clippy::todo)]
 
-use std::iter;
-
-use wgpu::{core::instance, util::DeviceExt};
 use winit::{
-    dpi::Position,
     event::*,
     event_loop::EventLoop,
     keyboard::{Key, NamedKey},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 mod render;
+use render::Circle;
 use render::RenderState;
 
 pub async fn run() {
@@ -19,7 +17,12 @@ pub async fn run() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     // State::new uses async code, so we're going to wait for it to finish
-    let mut state = RenderState::new(&window).await;
+    let mut state = RenderState::new(&window, 0.05).await;
+    state.update_circles(|_| {
+        Some(vec![Circle {
+            location: [0.5, 0.5],
+        }])
+    });
     let mut surface_configured = false;
 
     event_loop

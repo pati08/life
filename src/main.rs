@@ -1,4 +1,5 @@
+use life_new::run;
+
 fn main() {
-    //
-    println!("Hello, world!");
+    pollster::block_on(run());
 }
