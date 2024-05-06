@@ -1,4 +1,4 @@
-use std::iter;
+use std::{iter, sync::Arc};
 
 use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
@@ -21,7 +21,7 @@ pub struct Circle {
 }
 
 impl Circle {
-    fn as_instance(&self, radius: f32) -> Instance {
+    fn as_instance(&self, _radius: f32) -> Instance {
         let normalized_location = [
             self.location[0] * 2.0 - 1.0,
             -1.0 * (self.location[1] * 2.0 - 1.0),
@@ -122,28 +122,31 @@ struct RenderCore<'a> {
     config: wgpu::SurfaceConfiguration,
 }
 
+struct BuffersAndGroups {
+    vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+
+    #[allow(dead_code)]
+    radius_buffer: wgpu::Buffer,
+    radius_bind_group: wgpu::BindGroup,
+
+    #[allow(dead_code)]
+    color_buffer: wgpu::Buffer,
+    color_bind_group: wgpu::BindGroup,
+
+    res_buffer: wgpu::Buffer,
+    res_bind_group: wgpu::BindGroup,
+}
+
 pub struct RenderState<'a> {
     core: RenderCore<'a>,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    // NEW!
-    // #[allow(dead_code)]
-    // diffuse_texture: texture::Texture,
-    // diffuse_bind_group: wgpu::BindGroup,
-    window: &'a Window,
-    instance_buffer: wgpu::Buffer,
-    res_buffer: wgpu::Buffer,
-    res_bind_group: wgpu::BindGroup,
+    window: Arc<Window>,
     num_vertices: u32,
     circles: Vec<Circle>,
     grid_size: f32,
-    #[allow(dead_code)]
-    radius_buffer: wgpu::Buffer,
-    radius_bind_group: wgpu::BindGroup,
-    #[allow(dead_code)]
-    color_buffer: wgpu::Buffer,
-    color_bind_group: wgpu::BindGroup,
+    rsc: BuffersAndGroups,
 }
 
 impl<'a> RenderState<'a> {
@@ -155,7 +158,7 @@ impl<'a> RenderState<'a> {
     ///
     /// grid_size:
     /// The size of the grid. This is from 0 to 1 * the height of the viewport
-    pub async fn new(window: &'a Window, grid_size: f32) -> RenderState<'a> {
+    pub async fn new(window: Arc<Window>, grid_size: f32) -> RenderState<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -165,7 +168,7 @@ impl<'a> RenderState<'a> {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -394,22 +397,29 @@ impl<'a> RenderState<'a> {
             config,
         };
 
+        let bag = BuffersAndGroups {
+            vertex_buffer,
+            instance_buffer,
+
+            radius_buffer,
+            radius_bind_group,
+
+            color_buffer,
+            color_bind_group,
+
+            res_buffer,
+            res_bind_group,
+        };
+
         Self {
             core,
             size,
             render_pipeline,
-            vertex_buffer,
             window,
-            instance_buffer,
-            res_bind_group,
-            res_buffer,
             num_vertices: vertices.len() as u32,
             circles: Vec::new(),
             grid_size,
-            radius_buffer,
-            radius_bind_group,
-            color_buffer,
-            color_bind_group,
+            rsc: bag,
         }
     }
 
@@ -436,16 +446,17 @@ impl<'a> RenderState<'a> {
             .collect::<Vec<_>>();
 
         self.core.queue.write_buffer(
-            &self.instance_buffer,
+            &self.rsc.instance_buffer,
             0,
             bytemuck::cast_slice(&new_instances),
         );
     }
 
-    pub fn window(&self) -> &Window {
-        self.window
+    pub fn window(&self) -> Arc<Window> {
+        self.window.clone()
     }
 
+    #[allow(dead_code)]
     pub fn change_grid_size(&self, new: f32) {
         if new <= 0.0 {
             return;
@@ -453,7 +464,7 @@ impl<'a> RenderState<'a> {
         let vertices = circle_vertices(new);
         self.core
             .queue
-            .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+            .write_buffer(&self.rsc.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -468,7 +479,7 @@ impl<'a> RenderState<'a> {
             .configure(&self.core.device, &self.core.config);
 
         self.core.queue.write_buffer(
-            &self.res_buffer,
+            &self.rsc.res_buffer,
             0 as wgpu::BufferAddress,
             bytemuck::cast_slice(&[new_size.width as f32, new_size.height as f32]),
         );
@@ -520,12 +531,12 @@ impl<'a> RenderState<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.res_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.radius_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.color_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.rsc.res_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.rsc.color_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.rsc.vertex_buffer.slice(..));
 
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));
 
             render_pass.draw(0..self.num_vertices, 0..self.circles.len() as _);
 
