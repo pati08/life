@@ -1,7 +1,9 @@
 use std::iter;
 
-use wgpu::{core::instance, util::DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::{event::*, window::Window};
+
+pub const CIRCLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 // mod texture;
 //
@@ -10,6 +12,7 @@ use winit::{event::*, window::Window};
 ///
 /// Although the circle generally uses normalized device coordinates, it will
 /// adjust for aspect ratio.
+#[derive(Debug)]
 pub struct Circle {
     /// Where the circle will be drawn on the screen, between 0 and 1, where 1
     /// is the top-left and formatted as x, y. This is the position of the
@@ -19,8 +22,11 @@ pub struct Circle {
 
 impl Circle {
     fn as_instance(&self, radius: f32) -> Instance {
-        let normalized_location = [self.location[0] * 2.0 - 1.0, self.location[1] * 2.0 - 1.0];
-        let center = [self.location[0] + radius, self.location[1] - radius];
+        let normalized_location = [
+            self.location[0] * 2.0 - 1.0,
+            -1.0 * (self.location[1] * 2.0 - 1.0),
+        ];
+        let center = [normalized_location[0], normalized_location[1]];
         Instance {
             offset: normalized_location,
             center,
@@ -74,12 +80,12 @@ impl Instance {
                     offset: 0,
                     // While our vertex shader only uses locations 0, and 1 now, in later tutorials, we'll
                     // be using 2, 3, and 4, for Vertex. We'll start at slot 5, not conflict with them later
-                    shader_location: 5,
+                    shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 6,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -108,11 +114,16 @@ impl Vertex {
     }
 }
 
-pub struct RenderState<'a> {
+/// A struct that holds the core of the render state.
+struct RenderCore<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+}
+
+pub struct RenderState<'a> {
+    core: RenderCore<'a>,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
@@ -127,9 +138,23 @@ pub struct RenderState<'a> {
     num_vertices: u32,
     circles: Vec<Circle>,
     grid_size: f32,
+    #[allow(dead_code)]
+    radius_buffer: wgpu::Buffer,
+    radius_bind_group: wgpu::BindGroup,
+    #[allow(dead_code)]
+    color_buffer: wgpu::Buffer,
+    color_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> RenderState<'a> {
+    /// Create a new RenderState, ready for rendering.
+    ///
+    /// # Args
+    /// window:
+    /// A reference to a winit window, to which we will be rendering
+    ///
+    /// grid_size:
+    /// The size of the grid. This is from 0 to 1 * the height of the viewport
     pub async fn new(window: &'a Window, grid_size: f32) -> RenderState<'a> {
         let size = window.inner_size();
 
@@ -213,12 +238,77 @@ impl<'a> RenderState<'a> {
             }],
         });
 
+        let radius_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Radius Buffer"),
+            contents: bytemuck::cast_slice(&[grid_size]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let radius_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Radius Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let radius_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Radius Bind Group"),
+            layout: &radius_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: radius_buffer.as_entire_binding(),
+            }],
+        });
+
+        let color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Color Buffer"),
+            contents: bytemuck::cast_slice(&CIRCLE_COLOR),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let color_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Color Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let color_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Color Bind Group"),
+            layout: &color_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: color_buffer.as_entire_binding(),
+            }],
+        });
+
         let instances: Vec<Instance> = Vec::new();
+
+        // Determine the maximum size of the buffer for the current resolution and
+        // grid size.
+        let instances_max_size =
+            ((size.width as f32 / grid_size) + 2.0) * ((size.height as f32 / grid_size) + 2.0);
+        let instances_max_size = instances_max_size.round() as u64;
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: std::mem::size_of::<Instance>() as u64 * 80u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            // size: std::mem::size_of::<Instance>() as u64 * 80u64,
+            size: std::mem::size_of::<Instance>() as u64 * instances_max_size,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&instances));
@@ -237,7 +327,11 @@ impl<'a> RenderState<'a> {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&res_bind_group_layout],
+                bind_group_layouts: &[
+                    &res_bind_group_layout,
+                    &radius_bind_group_layout,
+                    &color_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -285,17 +379,23 @@ impl<'a> RenderState<'a> {
             multiview: None,
         });
 
+        let vertices = circle_vertices(grid_size);
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&circle_vertices(grid_size)),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
-        Self {
+        let core = RenderCore {
             surface,
             device,
             queue,
             config,
+        };
+
+        Self {
+            core,
             size,
             render_pipeline,
             vertex_buffer,
@@ -303,9 +403,13 @@ impl<'a> RenderState<'a> {
             instance_buffer,
             res_bind_group,
             res_buffer,
-            num_vertices: 0,
+            num_vertices: vertices.len() as u32,
             circles: Vec::new(),
             grid_size,
+            radius_buffer,
+            radius_bind_group,
+            color_buffer,
+            color_bind_group,
         }
     }
 
@@ -331,9 +435,7 @@ impl<'a> RenderState<'a> {
             .map(|c| c.as_instance(self.grid_size))
             .collect::<Vec<_>>();
 
-        dbg!(&new_instances);
-
-        self.queue.write_buffer(
+        self.core.queue.write_buffer(
             &self.instance_buffer,
             0,
             bytemuck::cast_slice(&new_instances),
@@ -349,7 +451,8 @@ impl<'a> RenderState<'a> {
             return;
         }
         let vertices = circle_vertices(new);
-        self.queue
+        self.core
+            .queue
             .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
     }
 
@@ -358,14 +461,16 @@ impl<'a> RenderState<'a> {
             return;
         }
         self.size = new_size;
-        self.config.width = new_size.width;
-        self.config.height = new_size.height;
-        self.surface.configure(&self.device, &self.config);
+        self.core.config.width = new_size.width;
+        self.core.config.height = new_size.height;
+        self.core
+            .surface
+            .configure(&self.core.device, &self.core.config);
 
-        self.queue.write_buffer(
+        self.core.queue.write_buffer(
             &self.res_buffer,
             0 as wgpu::BufferAddress,
-            bytemuck::cast_slice(&[new_size.width, new_size.height]),
+            bytemuck::cast_slice(&[new_size.width as f32, new_size.height as f32]),
         );
     }
 
@@ -381,16 +486,17 @@ impl<'a> RenderState<'a> {
     pub fn update(&mut self) {}
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.core.surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let mut encoder =
+            self.core
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -415,16 +521,18 @@ impl<'a> RenderState<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.res_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.radius_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.color_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-            render_pass.draw_indexed(0..self.num_vertices, 0, 0..self.circles.len() as _);
+            render_pass.draw(0..self.num_vertices, 0..self.circles.len() as _);
 
             render_pass.set_pipeline(&self.render_pipeline);
         }
 
-        self.queue.submit(iter::once(encoder.finish()));
+        self.core.queue.submit(iter::once(encoder.finish()));
         output.present();
 
         Ok(())

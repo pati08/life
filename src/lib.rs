@@ -17,11 +17,16 @@ pub async fn run() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     // State::new uses async code, so we're going to wait for it to finish
-    let mut state = RenderState::new(&window, 0.05).await;
+    let mut state = RenderState::new(&window, 0.2).await;
     state.update_circles(|_| {
-        Some(vec![Circle {
-            location: [0.5, 0.5],
-        }])
+        Some(vec![
+            Circle {
+                location: [0.5, 0.5],
+            },
+            Circle {
+                location: [0.11, 0.11],
+            },
+        ])
     });
     let mut surface_configured = false;
 

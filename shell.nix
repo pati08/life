@@ -1,5 +1,6 @@
-{pkgs ? import <nixpkgs> {}}: let
+{pkgs, inputs}: let
   overrides = builtins.fromTOML (builtins.readFile ./rust-toolchain.toml);
+  wgslAnalyzer = inputs.wgslAnalyzer.packages."${pkgs.system}".default;
 in
   pkgs.mkShell rec {
     nativeBuildInputs = with pkgs; [
@@ -24,6 +25,8 @@ in
       vulkan-extension-layer
       vulkan-validation-layers # don't need them *strictly* but immensely helpful
       cmake
+
+      wgslAnalyzer
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables
