@@ -1,4 +1,4 @@
-use life_new::run;
+use life::run;
 
 fn main() {
     pollster::block_on(run());

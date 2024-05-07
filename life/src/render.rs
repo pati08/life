@@ -318,7 +318,7 @@ impl<'a> RenderState<'a> {
 
         // Loads the shader at runtime. Change this for prod, but it makes shader
         // changes faster.
-        let shader_string = std::fs::read_to_string("src/shader.wgsl").unwrap();
+        let shader_string = std::fs::read_to_string("life/src/shader.wgsl").unwrap();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(shader_string.into()),

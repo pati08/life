@@ -23,14 +23,16 @@ struct State<'a> {
     game_state: GameState,
 }
 
+const GRID_SIZE: f32 = 2.0;
+
 impl<'a> State<'a> {
     pub async fn new() -> (Self, EventLoop<()>) {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let window = Arc::new(window);
 
-        let render_state = RenderState::new(window.clone(), 0.2).await;
-        let game_state = GameState::new(window.clone());
+        let render_state = RenderState::new(window.clone(), GRID_SIZE.recip()).await;
+        let game_state = GameState::new(window.clone(), GRID_SIZE.recip());
 
         (
             Self {

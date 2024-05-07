@@ -1,11 +1,15 @@
 use std::sync::Arc;
+use vec2::Vector2;
 
 use itertools::Itertools;
 
 use super::render::Circle;
 
 use winit::{
-    dpi::PhysicalPosition, event::{ElementState, KeyEvent, MouseButton, WindowEvent}, keyboard::{KeyCode, PhysicalKey}, window::Window
+    dpi::PhysicalSize,
+    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
+    window::Window,
 };
 
 pub enum LoopState {
@@ -42,19 +46,19 @@ impl LoopState {
 }
 
 pub struct GameState {
-    pan_position: [f32; 2],
-    living_cells: Vec<[i32; 2]>,
+    pan_position: Vector2<f32>,
+    living_cells: Vec<Vector2<i32>>,
     loop_state: LoopState,
     interval: std::time::Duration,
     window: Arc<Window>,
-    mouse_position: Option<[f32; 2]>,
+    mouse_position: Option<Vector2<f32>>,
     grid_size: f32,
 }
 
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         Self {
-            pan_position: [0.0, 0.0],
+            pan_position: [0.0, 0.0].into(),
             living_cells: Vec::new(),
             loop_state: LoopState::new(),
             interval: std::time::Duration::from_millis(300),
@@ -83,17 +87,17 @@ impl GameState {
             .living_cells
             .clone()
             .into_iter()
-            .map(get_adjacent)
-            .flatten()
+            .flat_map(get_adjacent)
             .dedup_with_count()
-            .filter_map(|(count, coords)| (count >= 2 && count <= 3).then(move || coords))
+            .filter(|(count, _coords)| (2..=3).contains(count))
+            .map(|(_count, coords)| coords)
             .collect()
     }
 
     #[allow(unused_variables)]
     pub fn input(&mut self, event: &WindowEvent) -> Option<Vec<Circle>> {
         if let WindowEvent::CursorMoved { position, .. } = event {
-            self.mouse_position = Some([position.x as f32, position.y as f32]);
+            self.mouse_position = Some([position.x as f32, position.y as f32].into());
         }
         if let WindowEvent::CursorLeft { .. } = event {
             self.mouse_position = None;
@@ -110,8 +114,8 @@ impl GameState {
                 .into_iter()
                 .map(|i| Circle {
                     location: [
-                        i[0] as f32 - self.pan_position[0],
-                        i[1] as f32 - self.pan_position[1],
+                        i.x as f32 - self.pan_position.x,
+                        i.y as f32 - self.pan_position.y,
                     ],
                 })
                 .collect();
@@ -122,9 +126,29 @@ impl GameState {
             ..
         } = event
         {
+            println!("Click received");
             let size = self.window.inner_size();
             let cursor_position = self.mouse_position;
-            todo!()
+            let cell_pos = find_cell_num(size, cursor_position?, self.pan_position, self.grid_size);
+
+            if let Some(i) = self.living_cells.iter().position(|e| *e == cell_pos) {
+                self.living_cells.swap_remove(i);
+            } else {
+                self.living_cells.push(cell_pos);
+            }
+
+            let circles = self
+                .living_cells
+                .clone()
+                .into_iter()
+                .map(|i| Circle {
+                    location: [
+                        i.x as f32 - self.pan_position.x,
+                        i.y as f32 - self.pan_position.y,
+                    ],
+                })
+                .collect();
+            Some(circles)
         } else {
             None
         }
@@ -151,8 +175,8 @@ impl GameState {
                 .into_iter()
                 .map(|i| Circle {
                     location: [
-                        i[0] as f32 - self.pan_position[0],
-                        i[1] as f32 - self.pan_position[1],
+                        i.x as f32 - self.pan_position.x,
+                        i.y as f32 - self.pan_position.y,
                     ],
                 })
                 .collect();
@@ -163,23 +187,39 @@ impl GameState {
     }
 }
 
-fn get_adjacent(coords: [i32; 2]) -> [[i32; 2]; 8] {
+fn get_adjacent(coords: Vector2<i32>) -> [Vector2<i32>; 8] {
     [
-        [coords[0] - 1, coords[1] - 1],
-        [coords[0] - 1, coords[1] + 1],
-        [coords[0] - 1, coords[1]],
-        [coords[0], coords[1] - 1],
-        [coords[0], coords[1] + 1],
-        [coords[0] + 1, coords[1]],
-        [coords[0] + 1, coords[1] - 1],
-        [coords[0] + 1, coords[1] + 1],
+        [coords.x - 1, coords.y - 1].into(),
+        [coords.x - 1, coords.y + 1].into(),
+        [coords.x - 1, coords.y].into(),
+        [coords.x, coords.y - 1].into(),
+        [coords.x, coords.y + 1].into(),
+        [coords.x + 1, coords.y].into(),
+        [coords.x + 1, coords.y - 1].into(),
+        [coords.x + 1, coords.y + 1].into(),
     ]
 }
 
-fn find_cell_num(size: PhysicalPosition<u32>, position: , offset: [f32; 2], grid_size: f32) -> [u32; 2] {
-    todo!()
+fn find_cell_num(
+    size: PhysicalSize<u32>,
+    position: Vector2<f32>,
+    offset: Vector2<f32>,
+    grid_size: f32,
+) -> Vector2<i32> {
+    let (size, position, offset, grid_size) = dbg!(size, position, offset, grid_size);
+    let aspect_ratio = size.width as f32 / size.height as f32;
+    let norm_position = Vector2::<f32>::scale(
+        position,
+        Vector2::new(size.width as f32, size.height as f32),
+    ) * 2.0
+        - Vector2::new(1.0, 1.0);
+    let norm_position =
+        Vector2::<f32>::scale(norm_position, Vector2::new(aspect_ratio.recip(), 1.0));
+
+    let world_position = norm_position + offset;
+    dbg!(world_position);
+    dbg!(Vector2::new(
+        world_position.x as i32,
+        world_position.y as i32,
+    ))
 }
-
-
-
-

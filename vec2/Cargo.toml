@@ -1,0 +1,10 @@
+[package]
+categories = ["data-structures"]
+description = "A new, updated version of the vector2 libary"
+edition = "2021"
+keywords = ["vector2", "vector", "2d", "vec", "vec2"]
+license = "MIT OR Apache-2.0"
+name = "vec2"
+version = "0.1.5"
+
+[dependencies]
