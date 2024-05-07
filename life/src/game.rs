@@ -126,7 +126,7 @@ impl GameState {
             ..
         } = event
         {
-            println!("Click received");
+            println!("\nClick received");
             let size = self.window.inner_size();
             let cursor_position = self.mouse_position;
             let cell_pos = find_cell_num(size, cursor_position?, self.pan_position, self.grid_size);
@@ -141,12 +141,7 @@ impl GameState {
                 .living_cells
                 .clone()
                 .into_iter()
-                .map(|i| Circle {
-                    location: [
-                        i.x as f32 - self.pan_position.x,
-                        i.y as f32 - self.pan_position.y,
-                    ],
-                })
+                .map(|i| to_circle(i, self.grid_size, self.pan_position))
                 .collect();
             Some(circles)
         } else {
@@ -173,17 +168,22 @@ impl GameState {
                 .living_cells
                 .clone()
                 .into_iter()
-                .map(|i| Circle {
-                    location: [
-                        i.x as f32 - self.pan_position.x,
-                        i.y as f32 - self.pan_position.y,
-                    ],
-                })
+                .map(|i| to_circle(i, self.grid_size, self.pan_position))
                 .collect();
             Some(circles)
         } else {
             None
         }
+    }
+}
+
+fn to_circle(cell: Vector2<i32>, grid_size: f32, pan: Vector2<f32>) -> Circle {
+    let cell = Vector2::new(
+        cell.x as f32 * grid_size + grid_size / 2.0,
+        cell.y as f32 * grid_size + grid_size / 2.0,
+    );
+    Circle {
+        location: [cell.x - pan.x, cell.y - (pan.y)],
     }
 }
 
@@ -207,19 +207,9 @@ fn find_cell_num(
     grid_size: f32,
 ) -> Vector2<i32> {
     let (size, position, offset, grid_size) = dbg!(size, position, offset, grid_size);
-    let aspect_ratio = size.width as f32 / size.height as f32;
-    let norm_position = Vector2::<f32>::scale(
-        position,
-        Vector2::new(size.width as f32, size.height as f32),
-    ) * 2.0
-        - Vector2::new(1.0, 1.0);
-    let norm_position =
-        Vector2::<f32>::scale(norm_position, Vector2::new(aspect_ratio.recip(), 1.0));
+    let shift_amount = (size.width as f32 - size.height as f32) / 2.0;
+    let x_shifted = position.x as f32 - shift_amount;
 
-    let world_position = norm_position + offset;
-    dbg!(world_position);
-    dbg!(Vector2::new(
-        world_position.x as i32,
-        world_position.y as i32,
-    ))
+    dbg!(shift_amount, x_shifted);
+    Vector2::new(0, 0)
 }
