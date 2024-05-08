@@ -766,6 +766,7 @@ dependencies = [
  "itertools",
  "log",
  "pollster",
+ "rustc-hash",
  "vec2",
  "wgpu",
  "winit",

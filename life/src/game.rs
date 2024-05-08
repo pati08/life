@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, hash::BuildHasherDefault, sync::Arc};
 use vec2::Vector2;
 
 use itertools::Itertools;
@@ -82,10 +82,11 @@ impl GameState {
     }
 
     pub fn step(&mut self) {
-        use std::collections::HashMap;
+        use rustc_hash::FxHashMap;
         // TODO: figure out how to do this without the clone
-        let mut adjacency_rec: HashMap<Vector2<i32>, u32> = HashMap::new();
+        let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
+        // This whole loop is actually O(n)
         for i in self.living_cells.iter() {
             for j in get_adjacent(i) {
                 if let Some(c) = adjacency_rec.get(&j) {
@@ -105,58 +106,61 @@ impl GameState {
             .collect();
     }
 
-    #[allow(unused_variables)]
     pub fn input(&mut self, event: &WindowEvent) -> Option<Vec<Circle>> {
+        // Track the cursor
         if let WindowEvent::CursorMoved { position, .. } = event {
             self.mouse_position = Some([position.x as f32, position.y as f32].into());
         }
+
+        // Forget the cursor position if it left the window
         if let WindowEvent::CursorLeft { .. } = event {
             self.mouse_position = None;
         }
 
-        if let WindowEvent::KeyboardInput { event, .. } = event
-            && let KeyEvent {
-                physical_key,
-                state,
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Space),
+                        state: ElementState::Pressed,
+                        ..
+                    },
                 ..
-            } = event
-            && let PhysicalKey::Code(KeyCode::Space) = physical_key
-            && let ElementState::Pressed = state
-        {
-            self.step();
-            let circles = self
-                .living_cells
-                .clone()
-                .into_iter()
-                .map(|i| to_circle(i, self.grid_size, self.pan_position))
-                .collect();
-            Some(circles)
-        } else if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: MouseButton::Left,
-            ..
-        } = event
-        {
-            println!("\nClick received");
-            let size = self.window.inner_size();
-            let cursor_position = self.mouse_position;
-            let cell_pos = find_cell_num(size, cursor_position?, self.pan_position, self.grid_size);
-
-            if let Some(i) = self.living_cells.iter().position(|e| *e == cell_pos) {
-                self.living_cells.swap_remove(i);
-            } else {
-                self.living_cells.push(cell_pos);
+            } => {
+                self.step();
+                let circles = self
+                    .living_cells
+                    .clone()
+                    .into_iter()
+                    .map(|i| to_circle(i, self.grid_size, self.pan_position))
+                    .collect();
+                Some(circles)
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let size = self.window.inner_size();
+                let cursor_position = self.mouse_position;
+                let cell_pos =
+                    find_cell_num(size, cursor_position?, self.pan_position, self.grid_size);
 
-            let circles = self
-                .living_cells
-                .clone()
-                .into_iter()
-                .map(|i| to_circle(i, self.grid_size, self.pan_position))
-                .collect();
-            Some(circles)
-        } else {
-            None
+                if let Some(i) = self.living_cells.iter().position(|e| *e == cell_pos) {
+                    self.living_cells.swap_remove(i);
+                } else {
+                    self.living_cells.push(cell_pos);
+                }
+
+                let circles = self
+                    .living_cells
+                    .clone()
+                    .into_iter()
+                    .map(|i| to_circle(i, self.grid_size, self.pan_position))
+                    .collect();
+                Some(circles)
+            }
+            _ => None,
         }
     }
 
