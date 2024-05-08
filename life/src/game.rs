@@ -82,16 +82,27 @@ impl GameState {
     }
 
     pub fn step(&mut self) {
+        use std::collections::HashMap;
         // TODO: figure out how to do this without the clone
-        self.living_cells = self
-            .living_cells
-            .clone()
+        let mut adjacency_rec: HashMap<Vector2<i32>, u32> = HashMap::new();
+
+        for i in self.living_cells.iter() {
+            for j in get_adjacent(i) {
+                if let Some(c) = adjacency_rec.get(&j) {
+                    adjacency_rec.insert(j, *c + 1);
+                } else {
+                    adjacency_rec.insert(j, 1);
+                }
+            }
+        }
+
+        self.living_cells = adjacency_rec
             .into_iter()
-            .flat_map(get_adjacent)
-            .dedup_with_count()
-            .filter(|(count, _coords)| (2..=3).contains(count))
-            .map(|(_count, coords)| coords)
-            .collect()
+            .filter(|(coords, count)| {
+                3 == *count || (2 == *count && self.living_cells.contains(coords))
+            })
+            .map(|(coords, _count)| coords)
+            .collect();
     }
 
     #[allow(unused_variables)]
@@ -104,20 +115,20 @@ impl GameState {
         }
 
         if let WindowEvent::KeyboardInput { event, .. } = event
-            && let KeyEvent { physical_key, .. } = event
+            && let KeyEvent {
+                physical_key,
+                state,
+                ..
+            } = event
             && let PhysicalKey::Code(KeyCode::Space) = physical_key
+            && let ElementState::Pressed = state
         {
-            self.toggle_playing();
+            self.step();
             let circles = self
                 .living_cells
                 .clone()
                 .into_iter()
-                .map(|i| Circle {
-                    location: [
-                        i.x as f32 - self.pan_position.x,
-                        i.y as f32 - self.pan_position.y,
-                    ],
-                })
+                .map(|i| to_circle(i, self.grid_size, self.pan_position))
                 .collect();
             Some(circles)
         } else if let WindowEvent::MouseInput {
@@ -187,7 +198,7 @@ fn to_circle(cell: Vector2<i32>, grid_size: f32, pan: Vector2<f32>) -> Circle {
     }
 }
 
-fn get_adjacent(coords: Vector2<i32>) -> [Vector2<i32>; 8] {
+fn get_adjacent(coords: &Vector2<i32>) -> [Vector2<i32>; 8] {
     [
         [coords.x - 1, coords.y - 1].into(),
         [coords.x - 1, coords.y + 1].into(),
@@ -206,10 +217,17 @@ fn find_cell_num(
     offset: Vector2<f32>,
     grid_size: f32,
 ) -> Vector2<i32> {
-    let (size, position, offset, grid_size) = dbg!(size, position, offset, grid_size);
+    let aspect_ratio = size.width as f32 / size.height as f32;
     let shift_amount = (size.width as f32 - size.height as f32) / 2.0;
-    let x_shifted = position.x as f32 - shift_amount;
-
-    dbg!(shift_amount, x_shifted);
-    Vector2::new(0, 0)
+    let x_shifted = position.x - shift_amount;
+    let x_scaled = x_shifted * aspect_ratio;
+    let position_scaled = Vector2::<f32>::scale(
+        Vector2::new(x_scaled, position.y),
+        Vector2::new((size.width as f32).recip(), (size.height as f32).recip()),
+    );
+    let final_position = (position_scaled / grid_size) + offset;
+    Vector2::new(
+        final_position.x.floor() as i32,
+        final_position.y.floor() as i32,
+    )
 }

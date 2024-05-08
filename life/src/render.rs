@@ -301,8 +301,9 @@ impl<'a> RenderState<'a> {
 
         // Determine the maximum size of the buffer for the current resolution and
         // grid size.
+        let aspect_ratio = size.width as f32 / size.height as f32;
         let instances_max_size =
-            ((size.width as f32 / grid_size) + 2.0) * ((size.height as f32 / grid_size) + 2.0);
+            (grid_size.recip() + 2.0) * ((grid_size.recip()) * aspect_ratio + 2.0);
         let instances_max_size = instances_max_size.round() as u64;
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {

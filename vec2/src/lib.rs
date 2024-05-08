@@ -20,7 +20,7 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
 pub struct Vector2<T> {
     /// X component of the vector.
     pub x: T,
@@ -28,6 +28,8 @@ pub struct Vector2<T> {
     /// Y component of the vector.
     pub y: T,
 }
+
+impl<T: Eq> Eq for Vector2<T> {}
 
 impl Vector2<f64> {
     /// Shorthand for writing `Vector2::new(0.0, -1.0)`.

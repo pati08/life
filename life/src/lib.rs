@@ -23,7 +23,7 @@ struct State<'a> {
     game_state: GameState,
 }
 
-const GRID_SIZE: f32 = 2.0;
+const GRID_SIZE: f32 = 10.0;
 
 impl<'a> State<'a> {
     pub async fn new() -> (Self, EventLoop<()>) {
