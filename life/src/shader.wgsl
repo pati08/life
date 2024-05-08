@@ -59,7 +59,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let frag_coord = in.frag_coord.xy / in.frag_coord.w;
 
     let dist = adj_distance(aspect_ratio, frag_coord, center);
-    if dist > radius {
+    if dist > (radius) {
         discard;
     }
     return color;

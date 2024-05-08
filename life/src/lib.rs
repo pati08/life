@@ -1,5 +1,6 @@
 #![feature(unboxed_closures)]
 #![feature(let_chains)]
+#![feature(if_let_guard)]
 #![warn(clippy::todo)]
 
 use winit::{
@@ -18,6 +19,7 @@ mod game;
 use game::GameState;
 
 struct State<'a> {
+    #[allow(dead_code)]
     window: Arc<Window>,
     render_state: RenderState<'a>,
     game_state: GameState,
@@ -60,9 +62,15 @@ pub async fn run() {
                     ref event,
                     window_id,
                 } if window_id == state.render_state.window().id() => {
-                    if let Some(c) = state.game_state.input(event) {
+                    let game_changes = state.game_state.input(event);
+                    if let Some(c) = game_changes.circles {
                         state.render_state.update_circles(|_| Some(c));
-                    } else if !state.render_state.input(event) {
+                    }
+                    if let Some(v) = game_changes.grid_size {
+                        state.render_state.change_grid_size(v);
+                    }
+
+                    if !state.render_state.input(event) {
                         match event {
                             WindowEvent::CloseRequested
                             | WindowEvent::KeyboardInput {

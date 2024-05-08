@@ -244,7 +244,7 @@ impl<'a> RenderState<'a> {
         let radius_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Radius Buffer"),
             contents: bytemuck::cast_slice(&[grid_size]),
-            usage: wgpu::BufferUsages::UNIFORM,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let radius_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -466,6 +466,10 @@ impl<'a> RenderState<'a> {
         self.core
             .queue
             .write_buffer(&self.rsc.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+
+        self.core
+            .queue
+            .write_buffer(&self.rsc.radius_buffer, 0, bytemuck::cast_slice(&[new]));
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
