@@ -1,5 +1,5 @@
 use core::f64;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use vec2::Vector2;
 
 use super::render::Circle;
@@ -7,15 +7,12 @@ use super::render::Circle;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    keyboard::{KeyCode, PhysicalKey},
+    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
     window::Window,
 };
 
 pub enum LoopState {
-    Playing {
-        last_update: std::time::Instant,
-        interval: std::time::Duration,
-    },
+    Playing { last_update: std::time::Instant },
     Stopped,
 }
 
@@ -25,12 +22,8 @@ impl LoopState {
     }
 
     #[allow(dead_code)]
-    fn should_step(&self) -> bool {
-        if let Self::Playing {
-            last_update,
-            interval,
-        } = self
-        {
+    fn should_step(&self, interval: &Duration) -> bool {
+        if let Self::Playing { last_update } = self {
             last_update.elapsed() >= *interval
         } else {
             false
@@ -39,16 +32,11 @@ impl LoopState {
 
     /// Updates the `last_update` field if playing.
     /// Otherwise, this is a no-op
-    fn update(&mut self) -> bool {
-        if let Self::Playing {
-            last_update,
-            interval,
-        } = self
-        {
+    fn update(&mut self, interval: &Duration) -> bool {
+        if let Self::Playing { last_update } = self {
             if last_update.elapsed() >= *interval {
                 *self = Self::Playing {
                     last_update: std::time::Instant::now(),
-                    interval: *interval,
                 };
                 true
             } else {
@@ -89,13 +77,16 @@ pub struct InputChanges {
     pub circles: Option<Vec<Circle>>,
 }
 
+const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
+const INTERVAL_P: f32 = 1.2;
+
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: Vec::new(),
             loop_state: LoopState::new(),
-            interval: std::time::Duration::from_millis(300),
+            interval: DEFAULT_INTERVAL,
             window,
             mouse_position: None,
             grid_size,
@@ -109,10 +100,7 @@ impl GameState {
         } else {
             self.step();
             let now = std::time::Instant::now();
-            self.loop_state = LoopState::Playing {
-                interval: self.interval,
-                last_update: now,
-            }
+            self.loop_state = LoopState::Playing { last_update: now }
         }
     }
 
@@ -151,15 +139,39 @@ impl GameState {
 
     pub fn input(&mut self, event: &WindowEvent) -> InputChanges {
         let mut changes = InputChanges::default();
-        // Forget the cursor position if it left the window
-        if let WindowEvent::CursorLeft { .. } = event {
-            self.mouse_position = None;
-            self.drag_state = DragState::NotDragging;
-        }
 
         match event {
+            // Speed up
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Named(NamedKey::ArrowUp),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => self.interval = self.interval.div_f32(INTERVAL_P),
+            // Slow down
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Named(NamedKey::ArrowDown),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => self.interval = self.interval.mul_f32(INTERVAL_P),
+
+            // Forget the cursor position if it left the window
+            WindowEvent::CursorLeft { .. } => {
+                self.mouse_position = None;
+                //self.drag_state = DragState::NotDragging;
+            }
+            // Zooming with scroll
             WindowEvent::MouseWheel { delta, .. } => {
-                let change = 0.00005
+                let size = self.window.inner_size();
+                let change = size.height as f32
+                    * 0.000002
                     * match delta {
                         MouseScrollDelta::LineDelta(_, n) => *n,
                         MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => {
@@ -170,6 +182,11 @@ impl GameState {
                 changes.circles = Some(self.get_circles());
                 changes.grid_size = Some(self.grid_size);
             }
+            // Track the cursor
+            //
+            // Getting the location of the cursor in the window can only be done
+            // by receiving CursorMoved events and keeping track of the last location
+            // we were told of.
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some([position.x, position.y].into());
                 if let DragState::Dragging { prev_pos } = self.drag_state {
@@ -192,6 +209,7 @@ impl GameState {
                     changes.circles = Some(self.get_circles());
                 }
             }
+            // Start dragging
             WindowEvent::MouseInput {
                 button: MouseButton::Right,
                 state: ElementState::Pressed,
@@ -201,6 +219,7 @@ impl GameState {
                     self.drag_state = DragState::Dragging { prev_pos: p };
                 }
             }
+            // Stop dragging
             WindowEvent::MouseInput {
                 button: MouseButton::Right,
                 state: ElementState::Released,
@@ -208,6 +227,7 @@ impl GameState {
             } => {
                 self.drag_state = DragState::NotDragging;
             }
+            // Toggle play with space
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -221,15 +241,21 @@ impl GameState {
                 let circles = self.get_circles();
                 changes.circles = Some(circles);
             }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Middle,
+            // Individual step with Tab
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Named(NamedKey::Tab),
+                        state: ElementState::Pressed,
+                        ..
+                    },
                 ..
             } => {
                 self.step();
                 let circles = self.get_circles();
                 changes.circles = Some(circles);
             }
+            // Cell state toggling with LMB
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
@@ -245,12 +271,7 @@ impl GameState {
                     self.living_cells.push(cell_pos);
                 }
 
-                let circles = self
-                    .living_cells
-                    .clone()
-                    .into_iter()
-                    .map(|i| to_circle(i, self.grid_size, self.pan_position))
-                    .collect();
+                let circles = self.get_circles();
                 changes.circles = Some(circles)
             }
             _ => (),
@@ -259,7 +280,7 @@ impl GameState {
     }
 
     pub fn update(&mut self) -> Option<Vec<Circle>> {
-        let should_step = self.loop_state.update();
+        let should_step = self.loop_state.update(&self.interval);
 
         if should_step {
             self.step();

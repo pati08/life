@@ -33,7 +33,8 @@ impl<'a> State<'a> {
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let window = Arc::new(window);
 
-        let render_state = RenderState::new(window.clone(), GRID_SIZE.recip()).await;
+        let render_state =
+            RenderState::new(window.clone(), GRID_SIZE.recip(), GRID_SIZE.powi(2) as u64).await;
         let game_state = GameState::new(window.clone(), GRID_SIZE.recip());
 
         (
@@ -55,7 +56,7 @@ pub async fn run() {
     event_loop
         .run(move |event, control_flow| {
             if let Some(c) = state.game_state.update() {
-                state.render_state.update_circles(|_| Some(c));
+                state.render_state.update_circles(c);
             }
             match event {
                 Event::WindowEvent {
@@ -64,7 +65,7 @@ pub async fn run() {
                 } if window_id == state.render_state.window().id() => {
                     let game_changes = state.game_state.input(event);
                     if let Some(c) = game_changes.circles {
-                        state.render_state.update_circles(|_| Some(c));
+                        state.render_state.update_circles(c);
                     }
                     if let Some(v) = game_changes.grid_size {
                         state.render_state.change_grid_size(v);

@@ -125,6 +125,7 @@ struct RenderCore<'a> {
 struct BuffersAndGroups {
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
+    instance_buffer_capacity: u64,
 
     #[allow(dead_code)]
     radius_buffer: wgpu::Buffer,
@@ -158,7 +159,7 @@ impl<'a> RenderState<'a> {
     ///
     /// grid_size:
     /// The size of the grid. This is from 0 to 1 * the height of the viewport
-    pub async fn new(window: Arc<Window>, grid_size: f32) -> RenderState<'a> {
+    pub async fn new(window: Arc<Window>, grid_size: f32, start_capacity: u64) -> RenderState<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -299,17 +300,10 @@ impl<'a> RenderState<'a> {
 
         let instances: Vec<Instance> = Vec::new();
 
-        // Determine the maximum size of the buffer for the current resolution and
-        // grid size.
-        let aspect_ratio = size.width as f32 / size.height as f32;
-        let instances_max_size =
-            (grid_size.recip() + 2.0) * ((grid_size.recip()) * aspect_ratio + 2.0);
-        let instances_max_size = instances_max_size.round() as u64;
-
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
             // size: std::mem::size_of::<Instance>() as u64 * 80u64,
-            size: std::mem::size_of::<Instance>() as u64 * instances_max_size,
+            size: std::mem::size_of::<Instance>() as u64 * start_capacity,
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
@@ -401,6 +395,7 @@ impl<'a> RenderState<'a> {
         let bag = BuffersAndGroups {
             vertex_buffer,
             instance_buffer,
+            instance_buffer_capacity: start_capacity,
 
             radius_buffer,
             radius_bind_group,
@@ -426,31 +421,40 @@ impl<'a> RenderState<'a> {
 
     /// Update the circles to be rendered.
     ///
-    /// Args
-    /// - f
-    /// A function that takes a mutable reference to `Vec<Circle>` and returns
-    /// `Option<Vec<Circle>>`. If it returns `Some(v)`, then the current value
-    /// will be replaced by the `v`
-    pub fn update_circles<F>(&mut self, f: F)
-    where
-        F: for<'f> FnOnce<(&'f mut Vec<Circle>,), Output = Option<Vec<Circle>>>,
-    {
-        let new_circles = f(&mut self.circles);
-        if let Some(v) = new_circles {
-            self.circles = v;
-        }
-
+    /// Automatically allocates new buffers when their capacity is insufficient
+    pub fn update_circles(&mut self, circles: Vec<Circle>) {
+        self.circles = circles;
         let new_instances = self
             .circles
             .iter()
             .map(|c| c.as_instance(self.grid_size))
             .collect::<Vec<_>>();
 
-        self.core.queue.write_buffer(
-            &self.rsc.instance_buffer,
-            0,
-            bytemuck::cast_slice(&new_instances),
-        );
+        let instance_count = new_instances.len();
+        let new_size = (instance_count as f32 * 1.5) as u64;
+
+        if instance_count as u64 > self.rsc.instance_buffer_capacity {
+            let instance_buffer = self.core.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Instance Buffer"),
+                // size: std::mem::size_of::<Instance>() as u64 * 80u64,
+                size: std::mem::size_of::<Instance>() as u64 * new_size,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            self.core
+                .queue
+                .write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&new_instances));
+            self.rsc.instance_buffer_capacity = new_size;
+            self.rsc.instance_buffer = instance_buffer;
+        } else {
+            self.core.queue.write_buffer(
+                &self.rsc.instance_buffer,
+                0,
+                bytemuck::cast_slice(&new_instances),
+            );
+        }
     }
 
     pub fn window(&self) -> Arc<Window> {
