@@ -1,4 +1,4 @@
-use core::f64;
+use rustc_hash::FxHashSet;
 use std::{sync::Arc, time::Duration};
 use vec2::Vector2;
 
@@ -62,7 +62,7 @@ enum DragState {
 
 pub struct GameState {
     pan_position: Vector2<f64>,
-    living_cells: Vec<Vector2<i32>>,
+    living_cells: FxHashSet<Vector2<i32>>,
     loop_state: LoopState,
     interval: std::time::Duration,
     window: Arc<Window>,
@@ -84,7 +84,7 @@ impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         Self {
             pan_position: [0.0, 0.0].into(),
-            living_cells: Vec::new(),
+            living_cells: FxHashSet::default(),
             loop_state: LoopState::new(),
             interval: DEFAULT_INTERVAL,
             window,
@@ -106,10 +106,8 @@ impl GameState {
 
     pub fn step(&mut self) {
         use rustc_hash::FxHashMap;
-        // TODO: figure out how to do this without the clone
         let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
-        // This whole loop is actually O(n)
         for i in self.living_cells.iter() {
             for j in get_adjacent(i) {
                 if let Some(c) = adjacency_rec.get(&j) {
@@ -131,9 +129,8 @@ impl GameState {
 
     fn get_circles(&self) -> Vec<Circle> {
         self.living_cells
-            .clone()
-            .into_iter()
-            .map(|i| to_circle(i, self.grid_size, self.pan_position))
+            .iter()
+            .map(|i| to_circle(*i, self.grid_size, self.pan_position))
             .collect()
     }
 
@@ -190,7 +187,7 @@ impl GameState {
                     * match delta {
                         MouseScrollDelta::LineDelta(_, n) => *n,
                         MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => {
-                            (*y * 20.0) as f32
+                            (*y * 0.2) as f32
                         }
                     };
                 self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
@@ -280,10 +277,10 @@ impl GameState {
                 let cell_pos =
                     find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
 
-                if let Some(i) = self.living_cells.iter().position(|e| *e == cell_pos) {
-                    self.living_cells.swap_remove(i);
+                if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
+                    self.living_cells.remove(&i);
                 } else {
-                    self.living_cells.push(cell_pos);
+                    self.living_cells.insert(cell_pos);
                 }
 
                 let circles = self.get_circles();

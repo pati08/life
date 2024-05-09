@@ -5,8 +5,7 @@ use winit::{event::*, window::Window};
 
 pub const CIRCLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-// mod texture;
-//
+mod texture;
 
 /// A circle that will be rendered to the screen.
 ///
@@ -38,21 +37,27 @@ fn circle_vertices(radius: f32) -> [Vertex; 6] {
     [
         Vertex {
             position: [-radius, -radius, 0.0],
+            tex_coords: [0.0, 0.0],
         },
         Vertex {
             position: [radius, -radius, 0.0],
+            tex_coords: [1.0, 0.0],
         },
         Vertex {
             position: [radius, radius, 0.0],
+            tex_coords: [1.0, 1.0],
         },
         Vertex {
             position: [-radius, -radius, 0.0],
+            tex_coords: [0.0, 0.0],
         },
         Vertex {
             position: [radius, radius, 0.0],
+            tex_coords: [1.0, 1.0],
         },
         Vertex {
             position: [-radius, radius, 0.0],
+            tex_coords: [0.0, 1.0],
         },
     ]
 }
@@ -97,6 +102,7 @@ impl Instance {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -105,11 +111,18 @@ impl Vertex {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x3,
-            }],
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
         }
     }
 }
@@ -137,6 +150,9 @@ struct BuffersAndGroups {
 
     res_buffer: wgpu::Buffer,
     res_bind_group: wgpu::BindGroup,
+
+    diffuse_texture: texture::Texture,
+    diffuse_bind_group: wgpu::BindGroup,
 }
 
 pub struct RenderState<'a> {
@@ -319,6 +335,48 @@ impl<'a> RenderState<'a> {
             source: wgpu::ShaderSource::Wgsl(shader_string.into()),
         });
 
+        let diffuse_bytes = include_bytes!("../../rsc/live.png");
+        let diffuse_texture =
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "live.png").unwrap();
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
         // let depth_texture =
         //     texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
@@ -329,6 +387,7 @@ impl<'a> RenderState<'a> {
                     &res_bind_group_layout,
                     &radius_bind_group_layout,
                     &color_bind_group_layout,
+                    &texture_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -405,6 +464,9 @@ impl<'a> RenderState<'a> {
 
             res_buffer,
             res_bind_group,
+
+            diffuse_bind_group,
+            diffuse_texture,
         };
 
         Self {
@@ -543,6 +605,7 @@ impl<'a> RenderState<'a> {
             render_pass.set_bind_group(0, &self.rsc.res_bind_group, &[]);
             render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
             render_pass.set_bind_group(2, &self.rsc.color_bind_group, &[]);
+            render_pass.set_bind_group(3, &self.rsc.diffuse_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.rsc.vertex_buffer.slice(..));
 
             render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));

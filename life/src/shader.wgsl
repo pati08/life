@@ -16,12 +16,14 @@ var<uniform> color: vec4<f32>;
 // Vertex shader
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(3) tex_coords: vec2<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) frag_coord: vec4<f32>,
     @location(4) circle_center: vec2<f32>,
+    @location(3) tex_coords: vec2<f32>,
 };
 
 @vertex
@@ -40,6 +42,7 @@ fn vs_main(
     out.clip_position = vec4<f32>(offset, 0.0, 0.0) + vec4<f32>(position, 1.0);
     out.frag_coord = out.clip_position;
     out.circle_center = instance.center;
+    out.tex_coords = model.tex_coords;
     return out;
 }
 
@@ -50,6 +53,11 @@ fn adj_distance(aspect_ratio: f32, frag_coord: vec2<f32>, center: vec2<f32>) -> 
     let y_dist = pow(adj_frag_coord.y - center.y, 2.0);
     return sqrt(x_dist + y_dist);
 }
+
+@group(3) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(3) @binding(1)
+var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -62,5 +70,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if dist > (radius) {
         discard;
     }
-    return color;
+    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
 }

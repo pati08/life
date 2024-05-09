@@ -16,3 +16,8 @@ cfg-if = "1.0"
 itertools = "0.12.1"
 vec2 = { path = "../vec2" }
 rustc-hash = "1.1"
+
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg"]
