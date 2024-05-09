@@ -7,7 +7,7 @@ use super::render::Circle;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
+    keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr},
     window::Window,
 };
 
@@ -139,8 +139,23 @@ impl GameState {
 
     pub fn input(&mut self, event: &WindowEvent) -> InputChanges {
         let mut changes = InputChanges::default();
+        let c_char = SmolStr::new_static("c");
 
         match event {
+            // Clear the screen when "c" pressed
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Character(keystr),
+                        repeat: false,
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if *keystr == c_char => {
+                self.living_cells.clear();
+                changes.circles = Some(Vec::new());
+            }
             // Speed up
             WindowEvent::KeyboardInput {
                 event:
@@ -171,14 +186,14 @@ impl GameState {
             WindowEvent::MouseWheel { delta, .. } => {
                 let size = self.window.inner_size();
                 let change = size.height as f32
-                    * 0.000002
+                    * 0.00005
                     * match delta {
                         MouseScrollDelta::LineDelta(_, n) => *n,
                         MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => {
                             (*y * 20.0) as f32
                         }
                     };
-                self.grid_size = (self.grid_size + change).clamp(0.0, 1.0);
+                self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
                 changes.circles = Some(self.get_circles());
                 changes.grid_size = Some(self.grid_size);
             }
