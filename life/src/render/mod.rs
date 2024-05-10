@@ -436,7 +436,7 @@ impl<'a> RenderState<'a> {
 
         let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Offset Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(&[0.0, 0.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let offset_bind_group_layout =
