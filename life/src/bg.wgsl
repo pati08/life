@@ -42,5 +42,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let y = in.tex_coords.y;
     let a = res.x / res.y;
     let tex_coords = (vec2<f32>(0.5 + ((2 * x * a) - a) / 2, y) + offset) / grid_size;
-    return textureSample(t_diffuse, s_diffuse, tex_coords);
+
+    let alpha_mod = smoothstep(0.01, 0.02, grid_size);
+    return textureSample(t_diffuse, s_diffuse, tex_coords) * vec4<f32>(1, 1, 1, alpha_mod);
 }
