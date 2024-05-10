@@ -37,27 +37,27 @@ fn circle_vertices(radius: f32) -> [Vertex; 6] {
     [
         Vertex {
             position: [-radius, -radius, 0.0],
-            tex_coords: [0.0, 0.0],
+            tex_coords: [1.0, 1.0],
         },
         Vertex {
             position: [radius, -radius, 0.0],
-            tex_coords: [1.0, 0.0],
+            tex_coords: [0.0, 1.0],
         },
         Vertex {
             position: [radius, radius, 0.0],
-            tex_coords: [1.0, 1.0],
-        },
-        Vertex {
-            position: [-radius, -radius, 0.0],
             tex_coords: [0.0, 0.0],
         },
         Vertex {
-            position: [radius, radius, 0.0],
+            position: [-radius, -radius, 0.0],
             tex_coords: [1.0, 1.0],
         },
         Vertex {
+            position: [radius, radius, 0.0],
+            tex_coords: [0.0, 0.0],
+        },
+        Vertex {
             position: [-radius, radius, 0.0],
-            tex_coords: [0.0, 1.0],
+            tex_coords: [1.0, 0.0],
         },
     ]
 }
@@ -125,6 +125,34 @@ impl Vertex {
             ],
         }
     }
+    fn new_bg() -> [Vertex; 6] {
+        [
+            Vertex {
+                position: [-1.0, -1.0, 0.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, -1.0, 0.0],
+                tex_coords: [0.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, 1.0, 0.0],
+                tex_coords: [0.0, 0.0],
+            },
+            Vertex {
+                position: [-1.0, -1.0, 0.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, 1.0, 0.0],
+                tex_coords: [0.0, 0.0],
+            },
+            Vertex {
+                position: [-1.0, 1.0, 0.0],
+                tex_coords: [1.0, 0.0],
+            },
+        ]
+    }
 }
 
 /// A struct that holds the core of the render state.
@@ -153,6 +181,9 @@ struct BuffersAndGroups {
 
     diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
+
+    offset_buffer: wgpu::Buffer,
+    offset_bind_group: wgpu::BindGroup,
 }
 
 pub struct RenderState<'a> {
@@ -405,10 +436,7 @@ impl<'a> RenderState<'a> {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -444,6 +472,34 @@ impl<'a> RenderState<'a> {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
+        let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Offset Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let offset_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("offset_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::all(),
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let offset_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("offset_bind_group"),
+            layout: &offset_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: offset_buffer.as_entire_binding(),
+            }],
+        });
+
         let core = RenderCore {
             surface,
             device,
@@ -467,6 +523,9 @@ impl<'a> RenderState<'a> {
 
             diffuse_bind_group,
             diffuse_texture,
+
+            offset_buffer,
+            offset_bind_group,
         };
 
         Self {
