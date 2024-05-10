@@ -75,6 +75,7 @@ pub struct GameState {
 pub struct InputChanges {
     pub grid_size: Option<f32>,
     pub circles: Option<Vec<Circle>>,
+    pub offset: Option<Vector2<f64>>,
 }
 
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
@@ -219,6 +220,7 @@ impl GameState {
                     // dbg!(pix_diff, norm_diff, raw_diff, diff, self.pan_position);
                     self.drag_state = DragState::Dragging { prev_pos: pos };
                     changes.circles = Some(self.get_circles());
+                    changes.offset = Some(self.pan_position);
                 }
             }
             // Start dragging

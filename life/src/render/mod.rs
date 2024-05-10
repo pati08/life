@@ -129,27 +129,27 @@ impl Vertex {
         [
             Vertex {
                 position: [-1.0, -1.0, 0.0],
-                tex_coords: [1.0, 1.0],
+                tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [1.0, -1.0, 0.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, 1.0, 0.0],
+                tex_coords: [1.0, 0.0],
+            },
+            Vertex {
+                position: [-1.0, -1.0, 0.0],
                 tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [1.0, 1.0, 0.0],
-                tex_coords: [0.0, 0.0],
-            },
-            Vertex {
-                position: [-1.0, -1.0, 0.0],
-                tex_coords: [1.0, 1.0],
-            },
-            Vertex {
-                position: [1.0, 1.0, 0.0],
-                tex_coords: [0.0, 0.0],
+                tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [-1.0, 1.0, 0.0],
-                tex_coords: [1.0, 0.0],
+                tex_coords: [0.0, 0.0],
             },
         ]
     }
@@ -179,11 +179,18 @@ struct BuffersAndGroups {
     res_buffer: wgpu::Buffer,
     res_bind_group: wgpu::BindGroup,
 
+    #[allow(dead_code)]
     diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
 
+    #[allow(dead_code)]
+    bg_texture: texture::Texture,
+    bg_texture_bind_group: wgpu::BindGroup,
+
+    #[allow(dead_code)]
     offset_buffer: wgpu::Buffer,
     offset_bind_group: wgpu::BindGroup,
+    bg_vertex_buffer: wgpu::Buffer,
 }
 
 pub struct RenderState<'a> {
@@ -195,6 +202,7 @@ pub struct RenderState<'a> {
     circles: Vec<Circle>,
     grid_size: f32,
     rsc: BuffersAndGroups,
+    bg_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl<'a> RenderState<'a> {
@@ -358,14 +366,6 @@ impl<'a> RenderState<'a> {
         });
         queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&instances));
 
-        // Loads the shader at runtime. Change this for prod, but it makes shader
-        // changes faster.
-        let shader_string = std::fs::read_to_string("life/src/shader.wgsl").unwrap();
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(shader_string.into()),
-        });
-
         let diffuse_bytes = include_bytes!("../../rsc/live.png");
         let diffuse_texture =
             texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "live.png").unwrap();
@@ -408,8 +408,77 @@ impl<'a> RenderState<'a> {
             label: Some("diffuse_bind_group"),
         });
 
+        let bg_texture_bytes = include_bytes!("../../rsc/dead.png");
+        let bg_texture =
+            texture::Texture::from_bytes(&device, &queue, bg_texture_bytes, "dead.png").unwrap();
+        let bg_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&bg_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&bg_texture.sampler),
+                },
+            ],
+            label: Some("bg_texture_bind_group"),
+        });
+
+        let vertices = circle_vertices(grid_size);
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Offset Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let offset_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("offset_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::all(),
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let offset_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("offset_bind_group"),
+            layout: &offset_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: offset_buffer.as_entire_binding(),
+            }],
+        });
+
+        let bg_vertices = Vertex::new_bg();
+        let bg_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("BG Vertex Buffer"),
+            contents: bytemuck::cast_slice(&bg_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         // let depth_texture =
         //     texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
+        // Loads the shader at runtime. Change this for prod, but it makes shader
+        // changes faster.
+        let shader_string = std::fs::read_to_string("life/src/shader.wgsl").unwrap();
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(shader_string.into()),
+        });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -464,40 +533,55 @@ impl<'a> RenderState<'a> {
             multiview: None,
         });
 
-        let vertices = circle_vertices(grid_size);
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        let bg_shader_string = std::fs::read_to_string("life/src/bg.wgsl").unwrap();
+        let bg_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("BG Shader"),
+            source: wgpu::ShaderSource::Wgsl(bg_shader_string.into()),
         });
-
-        let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Offset Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let offset_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("offset_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::all(),
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
+        let bg_render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("BG Render Pipeline Layout"),
+                bind_group_layouts: &[
+                    &offset_bind_group_layout,
+                    &radius_bind_group_layout,
+                    &texture_bind_group_layout,
+                    &res_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
             });
-        let offset_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("offset_bind_group"),
-            layout: &offset_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: offset_buffer.as_entire_binding(),
-            }],
+        let bg_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("BG Render Pipeline"),
+            layout: Some(&bg_render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &bg_shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &bg_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
         });
 
         let core = RenderCore {
@@ -526,6 +610,11 @@ impl<'a> RenderState<'a> {
 
             offset_buffer,
             offset_bind_group,
+
+            bg_vertex_buffer,
+
+            bg_texture,
+            bg_texture_bind_group,
         };
 
         Self {
@@ -537,6 +626,7 @@ impl<'a> RenderState<'a> {
             circles: Vec::new(),
             grid_size,
             rsc: bag,
+            bg_render_pipeline,
         }
     }
 
@@ -580,6 +670,13 @@ impl<'a> RenderState<'a> {
 
     pub fn window(&self) -> Arc<Window> {
         self.window.clone()
+    }
+
+    pub fn update_offset(&mut self, new_offset: vec2::Vector2<f32>) {
+        let offset: [f32; 2] = new_offset.into();
+        self.core
+            .queue
+            .write_buffer(&self.rsc.offset_buffer, 0, bytemuck::cast_slice(&offset));
     }
 
     #[allow(dead_code)]
@@ -640,8 +737,8 @@ impl<'a> RenderState<'a> {
                 });
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+            let mut first_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("BG Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -660,6 +757,33 @@ impl<'a> RenderState<'a> {
                 timestamp_writes: None,
             });
 
+            first_render_pass.set_pipeline(&self.bg_render_pipeline);
+
+            first_render_pass.set_bind_group(0, &self.rsc.offset_bind_group, &[]);
+            first_render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
+            first_render_pass.set_bind_group(2, &self.rsc.bg_texture_bind_group, &[]);
+            first_render_pass.set_bind_group(3, &self.rsc.res_bind_group, &[]);
+
+            first_render_pass.set_vertex_buffer(0, self.rsc.bg_vertex_buffer.slice(..));
+
+            first_render_pass.draw(0..6, 0..1);
+        }
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.rsc.res_bind_group, &[]);
             render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
@@ -670,8 +794,6 @@ impl<'a> RenderState<'a> {
             render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));
 
             render_pass.draw(0..self.num_vertices, 0..self.circles.len() as _);
-
-            render_pass.set_pipeline(&self.render_pipeline);
         }
 
         self.core.queue.submit(iter::once(encoder.finish()));
