@@ -11,6 +11,7 @@ use winit::{
     window::Window,
 };
 
+#[derive(Debug)]
 pub enum LoopState {
     Playing { last_update: std::time::Instant },
     Stopped,
@@ -55,11 +56,13 @@ impl LoopState {
     }
 }
 
+#[derive(Debug)]
 enum DragState {
     Dragging { prev_pos: Vector2<f64> },
     NotDragging,
 }
 
+#[derive(Debug)]
 pub struct GameState {
     pan_position: Vector2<f64>,
     living_cells: FxHashSet<Vector2<i32>>,
@@ -138,6 +141,7 @@ impl GameState {
     pub fn input(&mut self, event: &WindowEvent) -> InputChanges {
         let mut changes = InputChanges::default();
         let c_char = SmolStr::new_static("c");
+        let d_char = SmolStr::new_static("d");
 
         match event {
             // Clear the screen when "c" pressed
@@ -180,6 +184,21 @@ impl GameState {
                 self.mouse_position = None;
                 //self.drag_state = DragState::NotDragging;
             }
+
+            // Debugging
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Character(keystr),
+                        repeat: false,
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if *keystr == d_char => {
+                dbg!(self);
+            }
+
             // Zooming with scroll
             WindowEvent::MouseWheel { delta, .. } => {
                 let size = self.window.inner_size();
@@ -191,9 +210,33 @@ impl GameState {
                             (*y * 0.2) as f32
                         }
                     };
+
                 self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
                 changes.circles = Some(self.get_circles());
                 changes.grid_size = Some(self.grid_size);
+
+                let center = if let Some(v) = self.mouse_position {
+                    let aspect_ratio = size.width as f64 / size.height as f64;
+                    let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
+                    let x_shifted = v.x - shift_amount;
+                    let x_scaled = x_shifted * aspect_ratio;
+                    Vector2::<f64>::scale(
+                        Vector2::new(x_scaled, v.y),
+                        Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
+                    )
+                } else {
+                    Vector2::<f64>::new(0.0, 0.0)
+                };
+
+                let change = change as f64;
+                let gs = self.grid_size as f64;
+                let extra_offset = (center * gs) - ((center * gs) * change);
+
+                dbg!(center, extra_offset);
+
+                // extra_offset is actually the inverse of the way pan_position works
+                self.pan_position -= extra_offset;
+                changes.offset = Some(self.pan_position);
             }
             // Track the cursor
             //
