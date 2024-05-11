@@ -16,3 +16,5 @@ This is an improvement on my AP project (a pretty major one). It's so different 
 
 # Building and running
 If you have Nix installed, this will be easy. Use the flake.nix file provided. Otherwise, good luck. You should read the [wgpu](https://github.com/gfx-rs/wgpu) and [winit](https://github.com/rust-windowing/winit) dependencies.
+
+Once you've got the deps, just `cargo build --release`!

@@ -474,7 +474,7 @@ impl<'a> RenderState<'a> {
 
         // Loads the shader at runtime. Change this for prod, but it makes shader
         // changes faster.
-        let shader_string = std::fs::read_to_string("life/src/shader.wgsl").unwrap();
+        let shader_string = include_str!("./shader.wgsl");
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(shader_string.into()),
@@ -533,7 +533,7 @@ impl<'a> RenderState<'a> {
             multiview: None,
         });
 
-        let bg_shader_string = std::fs::read_to_string("life/src/bg.wgsl").unwrap();
+        let bg_shader_string = include_str!("./bg.wgsl");
         let bg_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("BG Shader"),
             source: wgpu::ShaderSource::Wgsl(bg_shader_string.into()),
