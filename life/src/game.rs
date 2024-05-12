@@ -157,6 +157,7 @@ impl GameState {
     }
 
     fn handle_scroll(&mut self, changes: &mut InputChanges, delta: MouseScrollDelta) {
+        let og_size = self.grid_size as f64;
         let size = self.window.inner_size();
         let change = size.height as f32
             * 0.00005
@@ -185,8 +186,7 @@ impl GameState {
         };
 
         let change = change as f64;
-        let gs = self.grid_size as f64;
-        let extra_offset = (center * gs) * -change;
+        let extra_offset = (center * og_size) * -change;
 
         dbg!(center, extra_offset, change);
 
