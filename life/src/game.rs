@@ -138,6 +138,63 @@ impl GameState {
             .collect()
     }
 
+    fn debug(&self) {
+        let size = self.window.inner_size();
+        let cursor_center_thing = if let Some(v) = self.mouse_position {
+            let aspect_ratio = size.width as f64 / size.height as f64;
+            let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
+            let x_shifted = v.x - shift_amount;
+            let x_scaled = x_shifted * aspect_ratio;
+            Vector2::<f64>::scale(
+                Vector2::new(x_scaled, v.y),
+                Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
+            )
+        } else {
+            Vector2::<f64>::new(0.0, 0.0)
+        };
+
+        dbg!(self, cursor_center_thing);
+    }
+
+    fn handle_scroll(&mut self, changes: &mut InputChanges, delta: MouseScrollDelta) {
+        let size = self.window.inner_size();
+        let change = size.height as f32
+            * 0.00005
+            * match delta {
+                MouseScrollDelta::LineDelta(_, n) => n,
+                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => (y * 0.2) as f32,
+            };
+
+        self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
+        changes.circles = Some(self.get_circles());
+        changes.grid_size = Some(self.grid_size);
+
+        // Definitely good up to here
+
+        let center = if let Some(v) = self.mouse_position {
+            let aspect_ratio = size.width as f64 / size.height as f64;
+            let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
+            let x_shifted = v.x - shift_amount;
+            let x_scaled = x_shifted * aspect_ratio;
+            Vector2::<f64>::scale(
+                Vector2::new(x_scaled, v.y),
+                Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
+            )
+        } else {
+            Vector2::<f64>::new(0.0, 0.0)
+        };
+
+        let change = change as f64;
+        let gs = self.grid_size as f64;
+        let extra_offset = (center * gs) * -change;
+
+        dbg!(center, extra_offset, change);
+
+        // extra_offset is actually the inverse of the way pan_position works
+        self.pan_position -= extra_offset;
+        changes.offset = Some(self.pan_position);
+    }
+
     pub fn input(&mut self, event: &WindowEvent) -> InputChanges {
         let mut changes = InputChanges::default();
         let c_char = SmolStr::new_static("c");
@@ -196,47 +253,12 @@ impl GameState {
                     },
                 ..
             } if *keystr == d_char => {
-                dbg!(self);
+                self.debug();
             }
 
             // Zooming with scroll
             WindowEvent::MouseWheel { delta, .. } => {
-                let size = self.window.inner_size();
-                let change = size.height as f32
-                    * 0.00005
-                    * match delta {
-                        MouseScrollDelta::LineDelta(_, n) => *n,
-                        MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => {
-                            (*y * 0.2) as f32
-                        }
-                    };
-
-                self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
-                changes.circles = Some(self.get_circles());
-                changes.grid_size = Some(self.grid_size);
-
-                let center = if let Some(v) = self.mouse_position {
-                    let aspect_ratio = size.width as f64 / size.height as f64;
-                    let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
-                    let x_shifted = v.x - shift_amount;
-                    let x_scaled = x_shifted * aspect_ratio;
-                    Vector2::<f64>::scale(
-                        Vector2::new(x_scaled, v.y),
-                        Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
-                    )
-                } else {
-                    Vector2::<f64>::new(0.0, 0.0)
-                };
-
-                let change = change as f64;
-                let gs = self.grid_size as f64;
-                let extra_offset = (center * gs) - ((center * gs) * change);
-
-                dbg!(center, extra_offset);
-
-                // extra_offset is actually the inverse of the way pan_position works
-                self.pan_position -= extra_offset;
-                changes.offset = Some(self.pan_position);
+                self.handle_scroll(&mut changes, *delta);
             }
             // Track the cursor
             //
