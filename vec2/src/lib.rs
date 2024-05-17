@@ -1,22 +1,3 @@
-//! Create and use 2D vectors
-//!
-//! # Example
-//!
-//! ```
-//! use vector2::Vector2;
-//!
-//! // Create a Vector2
-//! let vector2 = Vector2::new(1.0, 0.5);
-//!
-//! // (1.0, 0.0)
-//! let other = Vector2::RIGHT;
-//!
-//! // Add two Vector2s
-//! let added = vector2 + other;
-//!
-//! assert_eq!(added.x, 2.0);
-//! assert_eq!(added.y, 0.5);
-
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
