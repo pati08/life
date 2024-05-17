@@ -166,10 +166,7 @@ impl GameState {
             };
 
         self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
-        changes.circles = Some(self.get_circles());
         changes.grid_size = Some(self.grid_size);
-
-        // Definitely good up to here
 
         let center = if let Some(v) = self.mouse_position {
             let aspect_ratio = size.width as f64 / size.height as f64;
@@ -179,20 +176,20 @@ impl GameState {
             Vector2::<f64>::scale(
                 Vector2::new(x_scaled, v.y),
                 Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
-            )
+            ) + self.pan_position
         } else {
             Vector2::<f64>::new(0.0, 0.0)
         };
 
         let change = change as f64;
-        let gs = self.grid_size as f64;
-        let extra_offset = (center * gs) * -change;
+        let extra_offset = (center) * -change;
 
         dbg!(center, extra_offset, change);
 
         // extra_offset is actually the inverse of the way pan_position works
         self.pan_position -= extra_offset;
         changes.offset = Some(self.pan_position);
+        changes.circles = Some(self.get_circles());
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> InputChanges {

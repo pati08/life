@@ -25,17 +25,23 @@ struct State<'a> {
     game_state: GameState,
 }
 
-const GRID_SIZE: f32 = 10.0;
+/// The number of cells that will fit across the height of the window by default
+const DEFAULT_GRID_SIZE: f32 = 10.0;
 
 impl<'a> State<'a> {
+    /// Create a new state and get its render loop, which it creates
     pub async fn new() -> (Self, EventLoop<()>) {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let window = Arc::new(window);
 
-        let render_state =
-            RenderState::new(window.clone(), GRID_SIZE.recip(), GRID_SIZE.powi(2) as u64).await;
-        let game_state = GameState::new(window.clone(), GRID_SIZE.recip());
+        let render_state = RenderState::new(
+            window.clone(),
+            DEFAULT_GRID_SIZE.recip(),
+            DEFAULT_GRID_SIZE.powi(2) as u64,
+        )
+        .await;
+        let game_state = GameState::new(window.clone(), DEFAULT_GRID_SIZE.recip());
 
         (
             Self {
@@ -48,6 +54,7 @@ impl<'a> State<'a> {
     }
 }
 
+/// Run the game
 pub async fn run() {
     let (mut state, event_loop) = State::new().await;
 

@@ -37,27 +37,27 @@ fn circle_vertices(radius: f32) -> [Vertex; 6] {
     [
         Vertex {
             position: [-radius, -radius, 0.0],
-            tex_coords: [1.0, 1.0],
+            tex_coords: [0.0, 1.0],
         },
         Vertex {
             position: [radius, -radius, 0.0],
+            tex_coords: [1.0, 1.0],
+        },
+        Vertex {
+            position: [radius, radius, 0.0],
+            tex_coords: [1.0, 0.0],
+        },
+        Vertex {
+            position: [-radius, -radius, 0.0],
             tex_coords: [0.0, 1.0],
         },
         Vertex {
             position: [radius, radius, 0.0],
-            tex_coords: [0.0, 0.0],
-        },
-        Vertex {
-            position: [-radius, -radius, 0.0],
-            tex_coords: [1.0, 1.0],
-        },
-        Vertex {
-            position: [radius, radius, 0.0],
-            tex_coords: [0.0, 0.0],
+            tex_coords: [1.0, 0.0],
         },
         Vertex {
             position: [-radius, radius, 0.0],
-            tex_coords: [1.0, 0.0],
+            tex_coords: [0.0, 0.0],
         },
     ]
 }
