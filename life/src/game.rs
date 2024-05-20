@@ -152,8 +152,6 @@ impl GameState {
         } else {
             Vector2::<f64>::new(0.0, 0.0)
         };
-
-        dbg!(self, cursor_center_thing);
     }
 
     fn handle_scroll(&mut self, changes: &mut InputChanges, delta: MouseScrollDelta) {
@@ -183,8 +181,6 @@ impl GameState {
 
         let change = change as f64;
         let extra_offset = (center) * -change;
-
-        dbg!(center, extra_offset, change);
 
         // extra_offset is actually the inverse of the way pan_position works
         self.pan_position -= extra_offset;
@@ -278,8 +274,6 @@ impl GameState {
                     let diff = raw_diff; // self.grid_size as f64;
 
                     self.pan_position -= diff;
-                    //println!("{}", "-".repeat(20));
-                    // dbg!(pix_diff, norm_diff, raw_diff, diff, self.pan_position);
                     self.drag_state = DragState::Dragging { prev_pos: pos };
                     changes.circles = Some(self.get_circles());
                     changes.offset = Some(self.pan_position);
