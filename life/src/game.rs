@@ -72,6 +72,7 @@ pub struct GameState {
     mouse_position: Option<Vector2<f64>>,
     grid_size: f32,
     drag_state: DragState,
+    state_channel =
 }
 
 #[derive(Default)]
@@ -81,7 +82,10 @@ pub struct InputChanges {
     pub offset: Option<Vector2<f64>>,
 }
 
+/// The interval between simulation steps in auto-play mode.
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
+/// The factor by which the interval will be multiplied or divided when
+/// the player changes the simulation speed.
 const INTERVAL_P: f32 = 1.2;
 
 impl GameState {

@@ -10,7 +10,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use std::sync::Arc;
+use tokio::sync::Arc;
 
 mod render;
 use render::RenderState;
