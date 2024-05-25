@@ -10,7 +10,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use tokio::sync::Arc;
+use std::sync::Arc;
 
 mod render;
 use render::RenderState;
@@ -62,8 +62,16 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| {
-            if let Some(c) = state.game_state.update() {
+            let game_changes = state.game_state.update();
+            if let Some(c) = game_changes.circles {
                 state.render_state.update_circles(c);
+            }
+            if let Some(v) = game_changes.grid_size {
+                state.render_state.change_grid_size(v);
+            }
+            if let Some(v) = game_changes.offset {
+                let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
+                state.render_state.update_offset(offset);
             }
             match event {
                 Event::WindowEvent {

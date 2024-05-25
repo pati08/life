@@ -1,4 +1,3 @@
-#[tokio::main]
-async fn main() {
-    life::run().await;
+fn main() {
+    pollster::block_on(life::run());
 }

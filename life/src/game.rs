@@ -1,5 +1,15 @@
-use rustc_hash::FxHashSet;
-use std::{sync::Arc, time::Duration};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::{
+    cell,
+    collections::VecDeque,
+    sync::{
+        self,
+        atomic::{self, AtomicBool},
+        mpsc, Arc, Condvar, Mutex,
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 use vec2::Vector2;
 
 use super::render::Circle;
@@ -11,7 +21,6 @@ use winit::{
     window::Window,
 };
 
-#[derive(Debug)]
 pub enum LoopState {
     Playing { last_update: std::time::Instant },
     Stopped,
@@ -56,30 +65,89 @@ impl LoopState {
     }
 }
 
-#[derive(Debug)]
 enum DragState {
     Dragging { prev_pos: Vector2<f64> },
     NotDragging,
 }
 
-#[derive(Debug)]
+type LivingList = FxHashSet<Vector2<i32>>;
+
+enum StepThreadNotification {
+    Exit,
+    Waiting,
+    Compute(LivingList),
+}
+
+struct SharedThreadData {
+    notification: Mutex<StepThreadNotification>,
+    condvar: Condvar,
+    computing: AtomicBool,
+}
+
+struct ThreadData {
+    shared: Arc<SharedThreadData>,
+    local: LocalThreadData,
+}
+
+struct LocalThreadData {
+    join_handle: JoinHandle<()>,
+    rx: mpsc::Receiver<LivingList>,
+}
+
 pub struct GameState {
     pan_position: Vector2<f64>,
-    living_cells: FxHashSet<Vector2<i32>>,
+    living_cells: LivingList,
     loop_state: LoopState,
     interval: std::time::Duration,
     window: Arc<Window>,
     mouse_position: Option<Vector2<f64>>,
     grid_size: f32,
     drag_state: DragState,
-    state_channel =
+    input_queue: VecDeque<InputAction>,
+    #[cfg(feature = "threading")]
+    thread_data: ThreadData,
 }
 
 #[derive(Default)]
-pub struct InputChanges {
+pub struct StateChanges {
     pub grid_size: Option<f32>,
     pub circles: Option<Vec<Circle>>,
     pub offset: Option<Vector2<f64>>,
+}
+
+impl std::ops::AddAssign<StateChanges> for StateChanges {
+    fn add_assign(&mut self, other: StateChanges) {
+        if other.grid_size.is_some() {
+            self.grid_size = other.grid_size
+        };
+        if other.circles.is_some() {
+            self.circles = other.circles
+        };
+        if other.offset.is_some() {
+            self.offset = other.offset
+        };
+    }
+}
+
+fn compute_step(prev: &LivingList) -> LivingList {
+    use rustc_hash::FxHashMap;
+    let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
+
+    for i in prev.iter() {
+        for j in get_adjacent(i) {
+            if let Some(c) = adjacency_rec.get(&j) {
+                adjacency_rec.insert(j, *c + 1);
+            } else {
+                adjacency_rec.insert(j, 1);
+            }
+        }
+    }
+
+    adjacency_rec
+        .into_iter()
+        .filter(|(coords, count)| 3 == *count || (2 == *count && prev.contains(coords)))
+        .map(|(coords, _count)| coords)
+        .collect()
 }
 
 /// The interval between simulation steps in auto-play mode.
@@ -88,51 +156,20 @@ const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
 /// the player changes the simulation speed.
 const INTERVAL_P: f32 = 1.2;
 
-impl GameState {
-    pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        Self {
-            pan_position: [0.0, 0.0].into(),
-            living_cells: FxHashSet::default(),
-            loop_state: LoopState::new(),
-            interval: DEFAULT_INTERVAL,
-            window,
-            mouse_position: None,
-            grid_size,
-            drag_state: DragState::NotDragging,
-        }
-    }
+enum InputAction {
+    Clear,
+    Toggle(Vector2<i32>),
+}
 
-    pub fn toggle_playing(&mut self) {
+impl GameState {
+    pub fn toggle_playing(&mut self, changes: &mut StateChanges) {
         if self.loop_state.is_playing() {
             self.loop_state = LoopState::Stopped;
         } else {
-            self.step();
+            self.step(changes);
             let now = std::time::Instant::now();
             self.loop_state = LoopState::Playing { last_update: now }
         }
-    }
-
-    pub fn step(&mut self) {
-        use rustc_hash::FxHashMap;
-        let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
-
-        for i in self.living_cells.iter() {
-            for j in get_adjacent(i) {
-                if let Some(c) = adjacency_rec.get(&j) {
-                    adjacency_rec.insert(j, *c + 1);
-                } else {
-                    adjacency_rec.insert(j, 1);
-                }
-            }
-        }
-
-        self.living_cells = adjacency_rec
-            .into_iter()
-            .filter(|(coords, count)| {
-                3 == *count || (2 == *count && self.living_cells.contains(coords))
-            })
-            .map(|(coords, _count)| coords)
-            .collect();
     }
 
     fn get_circles(&self) -> Vec<Circle> {
@@ -142,23 +179,7 @@ impl GameState {
             .collect()
     }
 
-    fn debug(&self) {
-        let size = self.window.inner_size();
-        let cursor_center_thing = if let Some(v) = self.mouse_position {
-            let aspect_ratio = size.width as f64 / size.height as f64;
-            let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
-            let x_shifted = v.x - shift_amount;
-            let x_scaled = x_shifted * aspect_ratio;
-            Vector2::<f64>::scale(
-                Vector2::new(x_scaled, v.y),
-                Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
-            )
-        } else {
-            Vector2::<f64>::new(0.0, 0.0)
-        };
-    }
-
-    fn handle_scroll(&mut self, changes: &mut InputChanges, delta: MouseScrollDelta) {
+    fn handle_scroll(&mut self, changes: &mut StateChanges, delta: MouseScrollDelta) {
         let size = self.window.inner_size();
         let change = size.height as f32
             * 0.00005
@@ -192,10 +213,9 @@ impl GameState {
         changes.circles = Some(self.get_circles());
     }
 
-    pub fn input(&mut self, event: &WindowEvent) -> InputChanges {
-        let mut changes = InputChanges::default();
+    pub fn input(&mut self, event: &WindowEvent) -> StateChanges {
+        let mut changes = StateChanges::default();
         let c_char = SmolStr::new_static("c");
-        let d_char = SmolStr::new_static("d");
 
         match event {
             // Clear the screen when "c" pressed
@@ -209,8 +229,7 @@ impl GameState {
                     },
                 ..
             } if *keystr == c_char => {
-                self.living_cells.clear();
-                changes.circles = Some(Vec::new());
+                self.clear(&mut changes);
             }
             // Speed up
             WindowEvent::KeyboardInput {
@@ -237,20 +256,6 @@ impl GameState {
             WindowEvent::CursorLeft { .. } => {
                 self.mouse_position = None;
                 //self.drag_state = DragState::NotDragging;
-            }
-
-            // Debugging
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        logical_key: Key::Character(keystr),
-                        repeat: false,
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } if *keystr == d_char => {
-                self.debug();
             }
 
             // Zooming with scroll
@@ -311,9 +316,7 @@ impl GameState {
                     },
                 ..
             } => {
-                self.toggle_playing();
-                let circles = self.get_circles();
-                changes.circles = Some(circles);
+                self.toggle_playing(&mut changes);
             }
             // Individual step with Tab
             WindowEvent::KeyboardInput {
@@ -325,9 +328,7 @@ impl GameState {
                     },
                 ..
             } => {
-                self.step();
-                let circles = self.get_circles();
-                changes.circles = Some(circles);
+                self.step(&mut changes);
             }
             // Cell state toggling with LMB
             WindowEvent::MouseInput {
@@ -335,39 +336,226 @@ impl GameState {
                 button: MouseButton::Left,
                 ..
             } if let Some(mouse_position) = self.mouse_position => {
-                let size = self.window.inner_size();
-                let cell_pos =
-                    find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
-
-                if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
-                    self.living_cells.remove(&i);
-                } else {
-                    self.living_cells.insert(cell_pos);
-                }
-
-                let circles = self.get_circles();
-                changes.circles = Some(circles)
+                self.handle_left(&mut changes, mouse_position);
             }
             _ => (),
         };
         changes
     }
 
-    pub fn update(&mut self) -> Option<Vec<Circle>> {
+    fn resolve_queue(&mut self, changes: &mut StateChanges) {
+        while let Some(i) = self.input_queue.pop_front() {
+            match i {
+                InputAction::Clear => {
+                    self.living_cells.clear();
+                    changes.circles = Some(Vec::new());
+                }
+                InputAction::Toggle(cell) => {
+                    if self.living_cells.contains(&cell) {
+                        self.living_cells.remove(&cell);
+                    } else {
+                        self.living_cells.insert(cell);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "threading")]
+impl GameState {
+    pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
+        use StepThreadNotification as STN;
+        let (tx, rx) = mpsc::channel();
+        let condvar = Condvar::new();
+        let notification = Mutex::new(StepThreadNotification::Waiting);
+        let shared_thread_data = Arc::new(SharedThreadData {
+            condvar,
+            notification,
+            computing: AtomicBool::new(false),
+        });
+        let join_handle = {
+            let thread_data = Arc::clone(&shared_thread_data);
+            std::thread::spawn(move || loop {
+                let cvar = &thread_data.condvar;
+                let lock = &thread_data.notification;
+                let data_guard = lock.lock().unwrap();
+                let mut data_guard = cvar.wait(data_guard).unwrap();
+                match &*data_guard {
+                    STN::Exit => break,
+                    STN::Waiting => (),
+                    STN::Compute(data) => {
+                        thread_data
+                            .computing
+                            .store(true, sync::atomic::Ordering::Relaxed);
+                        tx.send(compute_step(data)).unwrap();
+                        *data_guard = STN::Waiting;
+                    }
+                }
+            })
+        };
+
+        let local_thread_data = LocalThreadData { join_handle, rx };
+
+        let thread_data = ThreadData {
+            local: local_thread_data,
+            shared: shared_thread_data,
+        };
+
+        Self {
+            pan_position: [0.0, 0.0].into(),
+            living_cells: FxHashSet::default(),
+            loop_state: LoopState::new(),
+            interval: DEFAULT_INTERVAL,
+            window,
+            mouse_position: None,
+            grid_size,
+            drag_state: DragState::NotDragging,
+            thread_data,
+            input_queue: VecDeque::new(),
+        }
+    }
+
+    pub fn step(&mut self, _changes: &mut StateChanges) {
+        if self
+            .thread_data
+            .shared
+            .computing
+            .load(atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+        *noti_lock = StepThreadNotification::Compute(self.living_cells.clone());
+        self.thread_data.shared.condvar.notify_all();
+    }
+
+    fn clear(&mut self, changes: &mut StateChanges) {
+        if self
+            .thread_data
+            .shared
+            .computing
+            .load(atomic::Ordering::Relaxed)
+        {
+            self.input_queue.push_back(InputAction::Clear);
+        } else {
+            self.living_cells.clear();
+            changes.circles = Some(Vec::new());
+        }
+    }
+
+    fn handle_left(&mut self, changes: &mut StateChanges, mouse_position: Vector2<f64>) {
+        let size = self.window.inner_size();
+        let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
+        if self
+            .thread_data
+            .shared
+            .computing
+            .load(atomic::Ordering::Relaxed)
+        {
+            self.input_queue.push_back(InputAction::Toggle(cell_pos));
+        } else {
+            if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
+                self.living_cells.remove(&i);
+            } else {
+                self.living_cells.insert(cell_pos);
+            }
+
+            let circles = self.get_circles();
+            changes.circles = Some(circles)
+        }
+    }
+
+    pub fn update(&mut self) -> StateChanges {
+        let mut changes = StateChanges::default();
+        let should_step = self.loop_state.update(&self.interval);
+
+        if should_step
+            && !self
+                .thread_data
+                .shared
+                .computing
+                .load(atomic::Ordering::Relaxed)
+        {
+            self.step(&mut changes);
+        }
+
+        if let Ok(v) = self.thread_data.local.rx.try_recv() {
+            self.living_cells = v;
+            changes.circles = Some(self.get_circles());
+            self.thread_data
+                .shared
+                .computing
+                .store(false, atomic::Ordering::Relaxed);
+            let mut lock = self.thread_data.shared.notification.lock().unwrap();
+            *lock = StepThreadNotification::Waiting;
+        }
+
+        self.resolve_queue(&mut changes);
+
+        changes
+    }
+}
+
+#[cfg(not(feature = "threading"))]
+impl GameState {
+    pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
+        Self {
+            pan_position: [0.0, 0.0].into(),
+            living_cells: FxHashSet::default(),
+            loop_state: LoopState::new(),
+            interval: DEFAULT_INTERVAL,
+            window,
+            mouse_position: None,
+            grid_size,
+            drag_state: DragState::NotDragging,
+            input_queue: VecDeque::new(),
+        }
+    }
+
+    pub fn step(&mut self, changes: &mut StateChanges) {
+        self.living_cells = compute_step(&self.living_cells);
+        changes.circles = Some(self.get_circles());
+    }
+
+    fn clear(&mut self, changes: &mut StateChanges) {
+        self.living_cells.clear();
+        changes.circles = Some(Vec::new());
+    }
+
+    fn handle_left(&mut self, changes: &mut StateChanges, mouse_position: Vector2<f64>) {
+        let size = self.window.inner_size();
+        let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
+
+        if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
+            self.living_cells.remove(&i);
+        } else {
+            self.living_cells.insert(cell_pos);
+        }
+
+        let circles = self.get_circles();
+        changes.circles = Some(circles)
+    }
+
+    pub fn update(&mut self) -> StateChanges {
+        let mut changes = StateChanges::default();
         let should_step = self.loop_state.update(&self.interval);
 
         if should_step {
-            self.step();
-            let circles = self
-                .living_cells
-                .clone()
-                .into_iter()
-                .map(|i| to_circle(i, self.grid_size, self.pan_position))
-                .collect();
-            Some(circles)
-        } else {
-            None
+            self.step(&mut changes);
         }
+
+        self.resolve_queue(&mut changes);
+
+        changes
+    }
+}
+
+#[cfg(feature = "threading")]
+impl Drop for GameState {
+    fn drop(&mut self) {
+        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+        *noti_lock = StepThreadNotification::Exit;
     }
 }
 
