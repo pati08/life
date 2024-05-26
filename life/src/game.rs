@@ -1,6 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
-    cell,
     collections::VecDeque,
     sync::{
         self,
@@ -72,23 +71,27 @@ enum DragState {
 
 type LivingList = FxHashSet<Vector2<i32>>;
 
+#[allow(dead_code)]
 enum StepThreadNotification {
     Exit,
     Waiting,
     Compute(LivingList),
 }
 
+#[allow(dead_code)]
 struct SharedThreadData {
     notification: Mutex<StepThreadNotification>,
     condvar: Condvar,
     computing: AtomicBool,
 }
 
+#[allow(dead_code)]
 struct ThreadData {
     shared: Arc<SharedThreadData>,
     local: LocalThreadData,
 }
 
+#[allow(dead_code)]
 struct LocalThreadData {
     join_handle: JoinHandle<()>,
     rx: mpsc::Receiver<LivingList>,
@@ -135,7 +138,6 @@ fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
 }
 
 fn compute_step(prev: &LivingList) -> LivingList {
-    use rustc_hash::FxHashMap;
     let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
     for i in prev.iter() {
@@ -180,7 +182,7 @@ impl GameState {
     fn get_circles(&self) -> Vec<Circle> {
         self.living_cells
             .iter()
-            .map(|i| to_circle(*i, self.grid_size, self.pan_position))
+            .map(|i| to_circle(*i, self.grid_size))
             .collect()
     }
 
@@ -577,7 +579,7 @@ impl Drop for GameState {
     }
 }
 
-fn to_circle(cell: Vector2<i32>, grid_size: f32, pan: Vector2<f64>) -> Circle {
+fn to_circle(cell: Vector2<i32>, grid_size: f32) -> Circle {
     let cell = Vector2::new(
         cell.x as f32 * grid_size + grid_size / 2.0,
         cell.y as f32 * grid_size + grid_size / 2.0,
