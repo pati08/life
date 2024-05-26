@@ -180,6 +180,7 @@ impl GameState {
     }
 
     fn handle_scroll(&mut self, changes: &mut StateChanges, delta: MouseScrollDelta) {
+        let prev_size = self.grid_size;
         let size = self.window.inner_size();
         let change = size.height as f32
             * 0.00005
@@ -204,11 +205,14 @@ impl GameState {
             Vector2::<f64>::new(0.0, 0.0)
         };
 
-        let change = change as f64;
-        let extra_offset = (center) * -change;
+        let change = (self.grid_size / prev_size) as f64 - 1.0;
+
+        // Technically the math works out to the opposite of this, but this is
+        // what works with the current coordinate system.
+        let extra_offset = center * change;
 
         // extra_offset is actually the inverse of the way pan_position works
-        self.pan_position -= extra_offset;
+        self.pan_position += extra_offset;
         changes.offset = Some(self.pan_position);
         changes.circles = Some(self.get_circles());
     }
