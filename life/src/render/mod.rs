@@ -239,7 +239,10 @@ impl<'a> RenderState<'a> {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: wgpu::Limits {
+                        max_bind_groups: 5,
+                        ..Default::default()
+                    },
                 },
                 None, // Trace path
             )
@@ -488,6 +491,7 @@ impl<'a> RenderState<'a> {
                     &radius_bind_group_layout,
                     &color_bind_group_layout,
                     &texture_bind_group_layout,
+                    &offset_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -789,6 +793,7 @@ impl<'a> RenderState<'a> {
             render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
             render_pass.set_bind_group(2, &self.rsc.color_bind_group, &[]);
             render_pass.set_bind_group(3, &self.rsc.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(4, &self.rsc.offset_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.rsc.vertex_buffer.slice(..));
 
             render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));

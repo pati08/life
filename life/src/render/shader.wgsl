@@ -13,6 +13,9 @@ var<uniform> radius: f32;
 @group(2) @binding(0)
 var<uniform> color: vec4<f32>;
 
+@group(4) @binding(0)
+var<uniform> pan: vec2<f32>;
+
 // Vertex shader
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -33,13 +36,14 @@ fn vs_main(
 ) -> VertexOutput {
     let aspect_ratio = f32(res.x) / f32(res.y);
 
-    let position = model.position / vec3<f32>(aspect_ratio, 1.0, 1.0);
+    let position = (model.position) / vec3<f32>(aspect_ratio, 1.0, 1.0);
     //let position = model.position;
-    let offset = instance.offset / vec2<f32>(aspect_ratio, 1.0);
+    let offset = (instance.offset - (vec2<f32>((pan.x * 2), -((pan.y * 2))))) / vec2<f32>(aspect_ratio, 1.0);
     //let offset = instance.offset;
 
     var out: VertexOutput;
-    out.clip_position = vec4<f32>(offset, 0.0, 0.0) + vec4<f32>(position, 1.0);
+    //let pan_mod = vec2<f32>(-pan.x, pan.y) / vec2<f32>(aspect_ratio, 1.0);
+    out.clip_position = vec4<f32>(offset, 0.0, 0.0) + vec4<f32>(position, 1.0);// + vec4<f32>(pan_mod, 0.0, 0.0);
     out.frag_coord = out.clip_position;
     out.circle_center = instance.center;
     out.tex_coords = model.tex_coords;

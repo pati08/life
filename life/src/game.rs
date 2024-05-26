@@ -129,6 +129,11 @@ impl std::ops::AddAssign<StateChanges> for StateChanges {
     }
 }
 
+#[inline(always)]
+fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
+    3 == *count || (2 == *count && prev.contains(coords))
+}
+
 fn compute_step(prev: &LivingList) -> LivingList {
     use rustc_hash::FxHashMap;
     let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
@@ -145,7 +150,7 @@ fn compute_step(prev: &LivingList) -> LivingList {
 
     adjacency_rec
         .into_iter()
-        .filter(|(coords, count)| 3 == *count || (2 == *count && prev.contains(coords)))
+        .filter(|(coords, count)| alive_rules(count, prev, coords))
         .map(|(coords, _count)| coords)
         .collect()
 }
@@ -235,6 +240,7 @@ impl GameState {
             } if *keystr == c_char => {
                 self.clear(&mut changes);
             }
+
             // Speed up
             WindowEvent::KeyboardInput {
                 event:
@@ -245,6 +251,7 @@ impl GameState {
                     },
                 ..
             } => self.interval = self.interval.div_f32(INTERVAL_P),
+
             // Slow down
             WindowEvent::KeyboardInput {
                 event:
@@ -266,11 +273,14 @@ impl GameState {
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_scroll(&mut changes, *delta);
             }
+
             // Track the cursor
             //
             // Getting the location of the cursor in the window can only be done
             // by receiving CursorMoved events and keeping track of the last location
             // we were told of.
+            //
+            // This block also handles panning
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position = Some([position.x, position.y].into());
                 if let DragState::Dragging { prev_pos } = self.drag_state {
@@ -288,11 +298,11 @@ impl GameState {
 
                     self.pan_position -= diff;
                     self.drag_state = DragState::Dragging { prev_pos: pos };
-                    changes.circles = Some(self.get_circles());
                     changes.offset = Some(self.pan_position);
                 }
             }
-            // Start dragging
+
+            // Start panning
             WindowEvent::MouseInput {
                 button: MouseButton::Right,
                 state: ElementState::Pressed,
@@ -302,7 +312,8 @@ impl GameState {
                     self.drag_state = DragState::Dragging { prev_pos: p };
                 }
             }
-            // Stop dragging
+
+            // Stop panning
             WindowEvent::MouseInput {
                 button: MouseButton::Right,
                 state: ElementState::Released,
@@ -310,7 +321,8 @@ impl GameState {
             } => {
                 self.drag_state = DragState::NotDragging;
             }
-            // Toggle play with space
+
+            // Toggle autoplay with space
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -322,6 +334,7 @@ impl GameState {
             } => {
                 self.toggle_playing(&mut changes);
             }
+
             // Individual step with Tab
             WindowEvent::KeyboardInput {
                 event:
@@ -334,6 +347,7 @@ impl GameState {
             } => {
                 self.step(&mut changes);
             }
+
             // Cell state toggling with LMB
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -569,7 +583,8 @@ fn to_circle(cell: Vector2<i32>, grid_size: f32, pan: Vector2<f64>) -> Circle {
         cell.y as f32 * grid_size + grid_size / 2.0,
     );
     Circle {
-        location: [cell.x - pan.x as f32, cell.y - (pan.y as f32)],
+        // location: [cell.x - pan.x as f32, cell.y - (pan.y as f32)],
+        location: [cell.x, cell.y],
     }
 }
 
