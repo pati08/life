@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4"
 winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-csd-adwaita"] }
 env_logger = "0.10"
 log = "0.4"
-wgpu = "0.19"
+wgpu = "0.20"
 pollster = "0.3"
 bytemuck = { version = "1.15.0", features = ["derive"] }
 anyhow = "1.0"
@@ -15,6 +16,11 @@ cfg-if = "1.0"
 itertools = "0.12.1"
 vec2 = { path = "../vec2" }
 rustc-hash = "1.1"
+egui = "0.27"
+epi = "0.17"
+egui_winit_platform = "0.22"
+egui_demo_lib = "0.27"
+egui_wgpu_backend = "0.29"
 
 [dependencies.image]
 version = "0.24"

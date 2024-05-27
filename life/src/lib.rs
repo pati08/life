@@ -73,11 +73,15 @@ pub async fn run() {
                 let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
                 state.render_state.update_offset(offset);
             }
-            match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == state.render_state.window().id() => {
+            let egui_captured = state.render_state.handle_event(&event);
+
+            if let Event::WindowEvent {
+                window_id,
+                ref event,
+            } = event
+                && window_id == state.render_state.window().id()
+            {
+                if !egui_captured {
                     let game_changes = state.game_state.input(event);
                     if let Some(c) = game_changes.circles {
                         state.render_state.update_circles(c);
@@ -89,55 +93,52 @@ pub async fn run() {
                         let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
                         state.render_state.update_offset(offset);
                     }
+                }
 
-                    if !state.render_state.input(event) {
-                        match event {
-                            WindowEvent::CloseRequested
-                            | WindowEvent::KeyboardInput {
-                                event:
-                                    KeyEvent {
-                                        state: ElementState::Pressed,
-                                        logical_key: Key::Named(NamedKey::Escape),
-                                        ..
-                                    },
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                state: ElementState::Pressed,
+                                logical_key: Key::Named(NamedKey::Escape),
                                 ..
-                            } => control_flow.exit(),
-                            WindowEvent::Resized(physical_size) => {
-                                surface_configured = true;
-                                state.render_state.resize(*physical_size);
+                            },
+                        ..
+                    } => control_flow.exit(),
+                    WindowEvent::Resized(physical_size) => {
+                        surface_configured = true;
+                        state.render_state.resize(*physical_size);
+                    }
+                    WindowEvent::RedrawRequested => {
+                        // This tells winit that we want another frame after this one
+                        state.render_state.window().request_redraw();
+
+                        if !surface_configured {
+                            return;
+                        }
+
+                        state.render_state.update();
+                        match state.render_state.render() {
+                            Ok(_) => {}
+                            // Reconfigure the surface if it's lost or outdated
+                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                                state.render_state.reconfigure()
                             }
-                            WindowEvent::RedrawRequested => {
-                                // This tells winit that we want another frame after this one
-                                state.render_state.window().request_redraw();
-
-                                if !surface_configured {
-                                    return;
-                                }
-
-                                state.render_state.update();
-                                match state.render_state.render() {
-                                    Ok(_) => {}
-                                    // Reconfigure the surface if it's lost or outdated
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => state.render_state.reconfigure(),
-                                    // The system is out of memory, we should probably quit
-                                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                                        log::error!("OutOfMemory");
-                                        control_flow.exit();
-                                    }
-
-                                    // This happens when the a frame takes too long to present
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        log::warn!("Surface timeout")
-                                    }
-                                }
+                            // The system is out of memory, we should probably quit
+                            Err(wgpu::SurfaceError::OutOfMemory) => {
+                                log::error!("OutOfMemory");
+                                control_flow.exit();
                             }
-                            _ => {}
+
+                            // This happens when the a frame takes too long to present
+                            Err(wgpu::SurfaceError::Timeout) => {
+                                log::warn!("Surface timeout")
+                            }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         })
         .unwrap();

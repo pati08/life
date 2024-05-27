@@ -157,8 +157,8 @@ impl Vertex {
 
 /// A struct that holds the core of the render state.
 struct RenderCore<'a> {
-    surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
+    surface: Arc<wgpu::Surface<'a>>,
+    device: Arc<wgpu::Device>,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 }
@@ -193,6 +193,8 @@ struct BuffersAndGroups {
     bg_vertex_buffer: wgpu::Buffer,
 }
 
+mod gui;
+
 pub struct RenderState<'a> {
     core: RenderCore<'a>,
     size: winit::dpi::PhysicalSize<u32>,
@@ -203,6 +205,7 @@ pub struct RenderState<'a> {
     grid_size: f32,
     rsc: BuffersAndGroups,
     bg_render_pipeline: wgpu::RenderPipeline,
+    egui: gui::GuiState<'a>,
 }
 
 impl<'a> RenderState<'a> {
@@ -264,7 +267,7 @@ impl<'a> RenderState<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -503,6 +506,7 @@ impl<'a> RenderState<'a> {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc(), Instance::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -512,6 +516,7 @@ impl<'a> RenderState<'a> {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -560,6 +565,7 @@ impl<'a> RenderState<'a> {
                 module: &bg_shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &bg_shader,
@@ -569,6 +575,7 @@ impl<'a> RenderState<'a> {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -587,6 +594,9 @@ impl<'a> RenderState<'a> {
             },
             multiview: None,
         });
+
+        let surface = Arc::new(surface);
+        let device = Arc::new(device);
 
         let core = RenderCore {
             surface,
@@ -621,6 +631,14 @@ impl<'a> RenderState<'a> {
             bg_texture_bind_group,
         };
 
+        let egui = gui::GuiState::new(
+            size,
+            Arc::clone(&window),
+            core.device.clone(),
+            surface_format,
+            core.surface.clone(),
+        );
+
         Self {
             core,
             size,
@@ -631,6 +649,7 @@ impl<'a> RenderState<'a> {
             grid_size,
             rsc: bag,
             bg_render_pipeline,
+            egui,
         }
     }
 
@@ -720,9 +739,8 @@ impl<'a> RenderState<'a> {
         self.resize(self.size);
     }
 
-    #[allow(unused_variables)]
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+    pub fn handle_event<T>(&mut self, event: &winit::event::Event<T>) -> bool {
+        self.egui.handle_event(event)
     }
 
     pub fn update(&mut self) {}
@@ -801,8 +819,15 @@ impl<'a> RenderState<'a> {
             render_pass.draw(0..self.num_vertices, 0..self.circles.len() as _);
         }
 
+        let (encoder, egui_tdelta) =
+            self.egui
+                .render(&self.core.config, &self.core.queue, &view, encoder);
+
         self.core.queue.submit(iter::once(encoder.finish()));
+
         output.present();
+
+        self.egui.remove_textures(egui_tdelta);
 
         Ok(())
     }
