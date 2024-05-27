@@ -1,10 +1,8 @@
 use egui::TexturesDelta;
+use std::sync::Arc;
 use std::time::Instant;
-use std::{iter, sync::Arc};
-use wgpu::Surface;
 
 use ::egui::FontDefinitions;
-use chrono::Timelike;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use wgpu::Device;
@@ -13,17 +11,16 @@ use winit::{
     event::{ElementState, Event},
 };
 
-pub struct GuiState<'a> {
+pub struct GuiState {
     platform: Platform,
     render_pass: RenderPass,
     app: egui_demo_lib::DemoWindows,
     device: Arc<Device>,
-    surface: Arc<Surface<'a>>,
     start_time: Instant,
     window: Arc<winit::window::Window>,
 }
 
-impl<'a> GuiState<'a> {
+impl GuiState {
     pub fn handle_event<T>(&mut self, event: &Event<T>) -> bool {
         let is_keyup = matches!(
             event,
@@ -52,8 +49,7 @@ impl<'a> GuiState<'a> {
         window: Arc<winit::window::Window>,
         device: Arc<wgpu::Device>,
         surface_format: wgpu::TextureFormat,
-        surface: Arc<Surface<'a>>,
-    ) -> GuiState<'a> {
+    ) -> GuiState {
         let platform = Platform::new(PlatformDescriptor {
             physical_width: size.width,
             physical_height: size.height,
@@ -69,7 +65,6 @@ impl<'a> GuiState<'a> {
             app,
             device,
             start_time: Instant::now(),
-            surface,
             window,
         }
     }

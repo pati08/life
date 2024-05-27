@@ -93,11 +93,8 @@ pub async fn run() {
                         let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
                         state.render_state.update_offset(offset);
                     }
-                }
 
-                match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
+                    if let WindowEvent::KeyboardInput {
                         event:
                             KeyEvent {
                                 state: ElementState::Pressed,
@@ -105,7 +102,14 @@ pub async fn run() {
                                 ..
                             },
                         ..
-                    } => control_flow.exit(),
+                    } = event
+                    {
+                        control_flow.exit();
+                    }
+                }
+
+                match event {
+                    WindowEvent::CloseRequested => control_flow.exit(),
                     WindowEvent::Resized(physical_size) => {
                         surface_configured = true;
                         state.render_state.resize(*physical_size);

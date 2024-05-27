@@ -1,7 +1,7 @@
 use std::{iter, sync::Arc};
 
 use wgpu::util::DeviceExt;
-use winit::{event::*, window::Window};
+use winit::window::Window;
 
 pub const CIRCLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
@@ -205,7 +205,7 @@ pub struct RenderState<'a> {
     grid_size: f32,
     rsc: BuffersAndGroups,
     bg_render_pipeline: wgpu::RenderPipeline,
-    egui: gui::GuiState<'a>,
+    egui: gui::GuiState,
 }
 
 impl<'a> RenderState<'a> {
@@ -636,7 +636,6 @@ impl<'a> RenderState<'a> {
             Arc::clone(&window),
             core.device.clone(),
             surface_format,
-            core.surface.clone(),
         );
 
         Self {
