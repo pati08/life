@@ -39,11 +39,17 @@ pub struct GameState {
     input_queue: VecDeque<InputAction>,
     #[cfg(feature = "threading")]
     thread_data: ThreadData,
+    living_cell_count: usize,
+    pub step_count: u64,
 }
 
 impl GameState {
     pub fn is_playing(&self) -> bool {
         self.loop_state.is_playing()
+    }
+
+    pub fn get_living_count(&self) -> usize {
+        self.living_cell_count
     }
 
     pub fn get_interval(&self) -> Duration {
@@ -66,11 +72,14 @@ impl GameState {
         }
     }
 
-    fn get_circles(&self) -> Vec<Circle> {
-        self.living_cells
+    fn get_circles(&mut self) -> Vec<Circle> {
+        let res: Vec<Circle> = self
+            .living_cells
             .iter()
             .map(|i| to_circle(*i, self.grid_size))
-            .collect()
+            .collect();
+        self.living_cell_count = res.len();
+        res
     }
 
     fn handle_scroll(&mut self, changes: &mut StateChanges, delta: MouseScrollDelta) {
@@ -320,6 +329,8 @@ impl GameState {
             drag_state: DragState::NotDragging,
             thread_data,
             input_queue: VecDeque::new(),
+            living_cell_count: 0,
+            step_count: 0,
         }
     }
 
@@ -396,6 +407,7 @@ impl GameState {
                 .store(false, atomic::Ordering::Relaxed);
             let mut lock = self.thread_data.shared.notification.lock().unwrap();
             *lock = StepThreadNotification::Waiting;
+            self.step_count += 1;
         }
 
         self.resolve_queue(&mut changes);
@@ -417,12 +429,15 @@ impl GameState {
             grid_size,
             drag_state: DragState::NotDragging,
             input_queue: VecDeque::new(),
+            living_cell_count: 0,
+            step_count: 0,
         }
     }
 
     pub fn step(&mut self, changes: &mut StateChanges) {
         self.living_cells = compute_step(&self.living_cells);
         changes.circles = Some(self.get_circles());
+        self.step_count += 1;
     }
 
     fn clear(&mut self, changes: &mut StateChanges) {

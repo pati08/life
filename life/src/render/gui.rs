@@ -1,4 +1,4 @@
-use egui::{Context, Slider, TexturesDelta};
+use egui::{Context, Id, Slider, TexturesDelta};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -136,31 +136,43 @@ impl Gui {
     const PLAYING_TEXT: &'static str = "Playing \u{23F8}";
     const NOT_PLAYING_TEXT: &'static str = "Stopped \u{23F5}";
     fn ui(&mut self, ctx: &Context) {
-        //egui::containers::panel::TopBottomPanel::top(Id::new("top_panel")).show(ctx, |ui| {});
-        egui::Window::new("Game").show(ctx, |ui| {
-            let mut game = self.game_state.lock().unwrap();
-            let button_text = if game.is_playing() {
-                Self::PLAYING_TEXT
-            } else {
-                Self::NOT_PLAYING_TEXT
-            };
-            let play_button = ui.button(button_text);
-            if play_button.clicked() {
-                game.toggle_playing(None);
-            }
-            let speed_get_set = |set: Option<f64>| {
-                if let Some(v) = set {
-                    game.set_interval(std::time::Duration::from_secs_f64(v));
-                }
-                game.get_interval().as_secs_f64()
-            };
+        let mut game = self.game_state.lock().unwrap();
+        egui::containers::panel::TopBottomPanel::top(Id::new("top_panel")).show(ctx, |ui| {
             ui.horizontal(|ui| {
+                let button_text = if game.is_playing() {
+                    Self::PLAYING_TEXT
+                } else {
+                    Self::NOT_PLAYING_TEXT
+                };
+                let play_button = ui.button(button_text);
+                if play_button.clicked() {
+                    game.toggle_playing(None);
+                }
+                let speed_get_set = |set: Option<f64>| {
+                    if let Some(v) = set {
+                        game.set_interval(std::time::Duration::from_secs_f64(v));
+                    }
+                    game.get_interval().as_secs_f64()
+                };
                 ui.label("Speed: ");
                 let speed_slider = Slider::from_get_set(1f64..=0.01f64, speed_get_set)
                     .show_value(false)
                     .clamp_to_range(true);
                 ui.add(speed_slider);
             });
+
+            egui::Window::new("Simulation Stats")
+                .show(ctx, |ui| {
+                    ui.label(format!("Living Cells: {}", game.get_living_count()));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Total Steps: {} ", game.step_count));
+                        let reset_button = ui.button("Reset");
+                        if reset_button.clicked() {
+                            game.step_count = 0;
+                        }
+                    });
+                })
+                .expect("Expected open window");
         });
     }
 }
