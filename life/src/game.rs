@@ -9,10 +9,6 @@ use std::{
     thread::JoinHandle,
     time::Duration,
 };
-use vec2::Vector2;
-
-use super::render::Circle;
-
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
@@ -20,82 +16,16 @@ use winit::{
     window::Window,
 };
 
-pub enum LoopState {
-    Playing { last_update: std::time::Instant },
-    Stopped,
-}
+use super::render::Circle;
+use vec2::Vector2;
 
-impl LoopState {
-    fn new() -> Self {
-        Self::Stopped
-    }
-
-    #[allow(dead_code)]
-    fn should_step(&self, interval: &Duration) -> bool {
-        if let Self::Playing { last_update } = self {
-            last_update.elapsed() >= *interval
-        } else {
-            false
-        }
-    }
-
-    /// Updates the `last_update` field if playing.
-    /// Otherwise, this is a no-op
-    fn update(&mut self, interval: &Duration) -> bool {
-        if let Self::Playing { last_update } = self {
-            if last_update.elapsed() >= *interval {
-                *self = Self::Playing {
-                    last_update: std::time::Instant::now(),
-                };
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn is_playing(&self) -> bool {
-        match self {
-            Self::Stopped => false,
-            Self::Playing { .. } => true,
-        }
-    }
-}
-
-enum DragState {
-    Dragging { prev_pos: Vector2<f64> },
-    NotDragging,
-}
+/// The interval between simulation steps in auto-play mode.
+const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
+/// The factor by which the interval will be multiplied or divided when
+/// the player changes the simulation speed.
+const INTERVAL_P: f32 = 1.2;
 
 type LivingList = FxHashSet<Vector2<i32>>;
-
-#[allow(dead_code)]
-enum StepThreadNotification {
-    Exit,
-    Waiting,
-    Compute(LivingList),
-}
-
-#[allow(dead_code)]
-struct SharedThreadData {
-    notification: Mutex<StepThreadNotification>,
-    condvar: Condvar,
-    computing: AtomicBool,
-}
-
-#[allow(dead_code)]
-struct ThreadData {
-    shared: Arc<SharedThreadData>,
-    local: LocalThreadData,
-}
-
-#[allow(dead_code)]
-struct LocalThreadData {
-    join_handle: JoinHandle<()>,
-    rx: mpsc::Receiver<LivingList>,
-}
 
 pub struct GameState {
     pan_position: Vector2<f64>,
@@ -111,65 +41,22 @@ pub struct GameState {
     thread_data: ThreadData,
 }
 
-#[derive(Default)]
-pub struct StateChanges {
-    pub grid_size: Option<f32>,
-    pub circles: Option<Vec<Circle>>,
-    pub offset: Option<Vector2<f64>>,
-}
-
-impl std::ops::AddAssign<StateChanges> for StateChanges {
-    fn add_assign(&mut self, other: StateChanges) {
-        if other.grid_size.is_some() {
-            self.grid_size = other.grid_size
-        };
-        if other.circles.is_some() {
-            self.circles = other.circles
-        };
-        if other.offset.is_some() {
-            self.offset = other.offset
-        };
-    }
-}
-
-#[inline(always)]
-fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
-    3 == *count || (2 == *count && prev.contains(coords))
-}
-
-fn compute_step(prev: &LivingList) -> LivingList {
-    let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
-
-    for i in prev.iter() {
-        for j in get_adjacent(i) {
-            if let Some(c) = adjacency_rec.get(&j) {
-                adjacency_rec.insert(j, *c + 1);
-            } else {
-                adjacency_rec.insert(j, 1);
-            }
-        }
-    }
-
-    adjacency_rec
-        .into_iter()
-        .filter(|(coords, count)| alive_rules(count, prev, coords))
-        .map(|(coords, _count)| coords)
-        .collect()
-}
-
-/// The interval between simulation steps in auto-play mode.
-const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
-/// The factor by which the interval will be multiplied or divided when
-/// the player changes the simulation speed.
-const INTERVAL_P: f32 = 1.2;
-
-enum InputAction {
-    Clear,
-    Toggle(Vector2<i32>),
-}
-
 impl GameState {
-    pub fn toggle_playing(&mut self, changes: &mut StateChanges) {
+    pub fn is_playing(&self) -> bool {
+        self.loop_state.is_playing()
+    }
+
+    pub fn get_interval(&self) -> Duration {
+        self.interval
+    }
+
+    pub fn set_interval(&mut self, to: Duration) {
+        self.interval = to;
+    }
+
+    pub fn toggle_playing(&mut self, changes: Option<&mut StateChanges>) {
+        let mut changes_dummy = StateChanges::default();
+        let changes = changes.unwrap_or(&mut changes_dummy);
         if self.loop_state.is_playing() {
             self.loop_state = LoopState::Stopped;
         } else {
@@ -334,7 +221,7 @@ impl GameState {
                     },
                 ..
             } => {
-                self.toggle_playing(&mut changes);
+                self.toggle_playing(Some(&mut changes));
             }
 
             // Individual step with Tab
@@ -571,12 +458,105 @@ impl GameState {
     }
 }
 
-#[cfg(feature = "threading")]
-impl Drop for GameState {
-    fn drop(&mut self) {
-        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
-        *noti_lock = StepThreadNotification::Exit;
+#[allow(dead_code)]
+enum StepThreadNotification {
+    Exit,
+    Waiting,
+    Compute(LivingList),
+}
+
+#[allow(dead_code)]
+struct SharedThreadData {
+    notification: Mutex<StepThreadNotification>,
+    condvar: Condvar,
+    computing: AtomicBool,
+}
+
+#[allow(dead_code)]
+struct ThreadData {
+    shared: Arc<SharedThreadData>,
+    local: LocalThreadData,
+}
+
+#[allow(dead_code)]
+struct LocalThreadData {
+    join_handle: JoinHandle<()>,
+    rx: mpsc::Receiver<LivingList>,
+}
+
+#[derive(Default)]
+pub struct StateChanges {
+    pub grid_size: Option<f32>,
+    pub circles: Option<Vec<Circle>>,
+    pub offset: Option<Vector2<f64>>,
+}
+
+impl std::ops::AddAssign<StateChanges> for StateChanges {
+    fn add_assign(&mut self, other: StateChanges) {
+        if other.grid_size.is_some() {
+            self.grid_size = other.grid_size
+        };
+        if other.circles.is_some() {
+            self.circles = other.circles
+        };
+        if other.offset.is_some() {
+            self.offset = other.offset
+        };
     }
+}
+
+pub enum LoopState {
+    Playing { last_update: std::time::Instant },
+    Stopped,
+}
+
+impl LoopState {
+    fn new() -> Self {
+        Self::Stopped
+    }
+
+    #[allow(dead_code)]
+    fn should_step(&self, interval: &Duration) -> bool {
+        if let Self::Playing { last_update } = self {
+            last_update.elapsed() >= *interval
+        } else {
+            false
+        }
+    }
+
+    /// Updates the `last_update` field if playing.
+    /// Otherwise, this is a no-op
+    fn update(&mut self, interval: &Duration) -> bool {
+        if let Self::Playing { last_update } = self {
+            if last_update.elapsed() >= *interval {
+                *self = Self::Playing {
+                    last_update: std::time::Instant::now(),
+                };
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn is_playing(&self) -> bool {
+        match self {
+            Self::Stopped => false,
+            Self::Playing { .. } => true,
+        }
+    }
+}
+
+enum DragState {
+    Dragging { prev_pos: Vector2<f64> },
+    NotDragging,
+}
+
+enum InputAction {
+    Clear,
+    Toggle(Vector2<i32>),
 }
 
 fn to_circle(cell: Vector2<i32>, grid_size: f32) -> Circle {
@@ -622,4 +602,37 @@ fn find_cell_num(
         final_position.x.floor() as i32,
         final_position.y.floor() as i32,
     )
+}
+
+fn compute_step(prev: &LivingList) -> LivingList {
+    let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
+
+    for i in prev.iter() {
+        for j in get_adjacent(i) {
+            if let Some(c) = adjacency_rec.get(&j) {
+                adjacency_rec.insert(j, *c + 1);
+            } else {
+                adjacency_rec.insert(j, 1);
+            }
+        }
+    }
+
+    adjacency_rec
+        .into_iter()
+        .filter(|(coords, count)| alive_rules(count, prev, coords))
+        .map(|(coords, _count)| coords)
+        .collect()
+}
+
+#[inline(always)]
+fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
+    3 == *count || (2 == *count && prev.contains(coords))
+}
+
+#[cfg(feature = "threading")]
+impl Drop for GameState {
+    fn drop(&mut self) {
+        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+        *noti_lock = StepThreadNotification::Exit;
+    }
 }

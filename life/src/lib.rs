@@ -10,7 +10,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod render;
 use render::RenderState;
@@ -22,7 +22,7 @@ struct State<'a> {
     #[allow(dead_code)]
     window: Arc<Window>,
     render_state: RenderState<'a>,
-    game_state: GameState,
+    game_state: Arc<Mutex<GameState>>,
 }
 
 /// The number of cells that will fit across the height of the window by default
@@ -35,13 +35,18 @@ impl<'a> State<'a> {
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let window = Arc::new(window);
 
+        let game_state = Arc::new(Mutex::new(GameState::new(
+            window.clone(),
+            DEFAULT_GRID_SIZE.recip(),
+        )));
+
         let render_state = RenderState::new(
             window.clone(),
             DEFAULT_GRID_SIZE.recip(),
             DEFAULT_GRID_SIZE.powi(2) as u64,
+            Arc::clone(&game_state),
         )
         .await;
-        let game_state = GameState::new(window.clone(), DEFAULT_GRID_SIZE.recip());
 
         (
             Self {
@@ -62,16 +67,19 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| {
-            let game_changes = state.game_state.update();
-            if let Some(c) = game_changes.circles {
-                state.render_state.update_circles(c);
-            }
-            if let Some(v) = game_changes.grid_size {
-                state.render_state.change_grid_size(v);
-            }
-            if let Some(v) = game_changes.offset {
-                let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
-                state.render_state.update_offset(offset);
+            {
+                let mut game = state.game_state.lock().unwrap();
+                let game_changes = game.update();
+                if let Some(c) = game_changes.circles {
+                    state.render_state.update_circles(c);
+                }
+                if let Some(v) = game_changes.grid_size {
+                    state.render_state.change_grid_size(v);
+                }
+                if let Some(v) = game_changes.offset {
+                    let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
+                    state.render_state.update_offset(offset);
+                }
             }
             let egui_captured = state.render_state.handle_event(&event);
 
@@ -82,7 +90,8 @@ pub async fn run() {
                 && window_id == state.render_state.window().id()
             {
                 if !egui_captured {
-                    let game_changes = state.game_state.input(event);
+                    let mut game = state.game_state.lock().unwrap();
+                    let game_changes = game.input(event);
                     if let Some(c) = game_changes.circles {
                         state.render_state.update_circles(c);
                     }

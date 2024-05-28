@@ -1,7 +1,12 @@
-use std::{iter, sync::Arc};
+use std::{
+    iter,
+    sync::{Arc, Mutex},
+};
 
 use wgpu::util::DeviceExt;
 use winit::window::Window;
+
+use crate::game::GameState;
 
 pub const CIRCLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
@@ -217,7 +222,12 @@ impl<'a> RenderState<'a> {
     ///
     /// grid_size:
     /// The size of the grid. This is from 0 to 1 * the height of the viewport
-    pub async fn new(window: Arc<Window>, grid_size: f32, start_capacity: u64) -> RenderState<'a> {
+    pub async fn new(
+        window: Arc<Window>,
+        grid_size: f32,
+        start_capacity: u64,
+        game_state: Arc<Mutex<GameState>>,
+    ) -> RenderState<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -636,6 +646,7 @@ impl<'a> RenderState<'a> {
             Arc::clone(&window),
             core.device.clone(),
             surface_format,
+            game_state,
         );
 
         Self {
