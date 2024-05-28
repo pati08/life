@@ -1088,6 +1088,7 @@ dependencies = [
  "chrono",
  "egui 0.27.2",
  "egui_demo_lib",
+ "egui_plot",
  "egui_wgpu_backend",
  "egui_winit_platform",
  "env_logger",
@@ -1542,9 +1543,9 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rustc-hash"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+checksum = "3450ed37fe9609abb6bc3b8891b6e078404e4c53c7332350e2e15126a95229bf"
 
 [[package]]
 name = "rustix"

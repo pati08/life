@@ -91,17 +91,7 @@ pub async fn run() {
             {
                 if !egui_captured {
                     let mut game = state.game_state.lock().unwrap();
-                    let game_changes = game.input(event);
-                    if let Some(c) = game_changes.circles {
-                        state.render_state.update_circles(c);
-                    }
-                    if let Some(v) = game_changes.grid_size {
-                        state.render_state.change_grid_size(v);
-                    }
-                    if let Some(v) = game_changes.offset {
-                        let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
-                        state.render_state.update_offset(offset);
-                    }
+                    game.input(event);
 
                     if let WindowEvent::KeyboardInput {
                         event:

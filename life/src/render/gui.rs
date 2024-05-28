@@ -1,8 +1,9 @@
-use egui::{Context, Id, Slider, TexturesDelta};
+use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use ::egui::FontDefinitions;
+use egui_plot::{Line, Plot};
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use wgpu::Device;
@@ -133,12 +134,17 @@ struct Gui {
 }
 
 impl Gui {
-    const PLAYING_TEXT: &'static str = "Playing \u{23F8}";
-    const NOT_PLAYING_TEXT: &'static str = "Stopped \u{23F5}";
+    const PLAYING_TEXT: &'static str = "Playing \u{23F5}";
+    const NOT_PLAYING_TEXT: &'static str = "Stopped \u{23F8}";
     fn ui(&mut self, ctx: &Context) {
         let mut game = self.game_state.lock().unwrap();
         egui::containers::panel::TopBottomPanel::top(Id::new("top_panel")).show(ctx, |ui| {
             ui.horizontal(|ui| {
+                let reset_button =
+                    ui.button(RichText::new("RESET GAME").color(Color32::RED).strong());
+                if reset_button.clicked() {
+                    game.clear();
+                }
                 let button_text = if game.is_playing() {
                     Self::PLAYING_TEXT
                 } else {
@@ -146,7 +152,7 @@ impl Gui {
                 };
                 let play_button = ui.button(button_text);
                 if play_button.clicked() {
-                    game.toggle_playing(None);
+                    game.toggle_playing();
                 }
                 let speed_get_set = |set: Option<f64>| {
                     if let Some(v) = set {
@@ -166,11 +172,17 @@ impl Gui {
                     ui.label(format!("Living Cells: {}", game.get_living_count()));
                     ui.horizontal(|ui| {
                         ui.label(format!("Total Steps: {} ", game.step_count));
-                        let reset_button = ui.button("Reset");
-                        if reset_button.clicked() {
-                            game.step_count = 0;
-                        }
                     });
+                    let line_values = game
+                        .living_count_history
+                        .iter()
+                        .enumerate()
+                        .map(|(i, j)| [i as f64, *j as f64])
+                        .collect::<Vec<[f64; 2]>>();
+                    let line = Line::new(line_values);
+                    Plot::new("living_cell_count_plot")
+                        .show_axes(false)
+                        .show(ui, |plot_ui| plot_ui.line(line));
                 })
                 .expect("Expected open window");
         });

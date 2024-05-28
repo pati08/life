@@ -41,6 +41,8 @@ pub struct GameState {
     thread_data: ThreadData,
     living_cell_count: usize,
     pub step_count: u64,
+    pub living_count_history: Vec<usize>,
+    changes: StateChanges,
 }
 
 impl GameState {
@@ -60,29 +62,26 @@ impl GameState {
         self.interval = to;
     }
 
-    pub fn toggle_playing(&mut self, changes: Option<&mut StateChanges>) {
-        let mut changes_dummy = StateChanges::default();
-        let changes = changes.unwrap_or(&mut changes_dummy);
+    pub fn toggle_playing(&mut self) {
         if self.loop_state.is_playing() {
             self.loop_state = LoopState::Stopped;
         } else {
-            self.step(changes);
+            self.step();
             let now = std::time::Instant::now();
             self.loop_state = LoopState::Playing { last_update: now }
         }
     }
 
-    fn get_circles(&mut self) -> Vec<Circle> {
+    fn get_circles(&self) -> Vec<Circle> {
         let res: Vec<Circle> = self
             .living_cells
             .iter()
             .map(|i| to_circle(*i, self.grid_size))
             .collect();
-        self.living_cell_count = res.len();
         res
     }
 
-    fn handle_scroll(&mut self, changes: &mut StateChanges, delta: MouseScrollDelta) {
+    fn handle_scroll(&mut self, delta: MouseScrollDelta) {
         let prev_size = self.grid_size;
         let size = self.window.inner_size();
         let change = size.height as f32
@@ -93,7 +92,7 @@ impl GameState {
             };
 
         self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
-        changes.grid_size = Some(self.grid_size);
+        self.changes.grid_size = Some(self.grid_size);
 
         let center = if let Some(v) = self.mouse_position {
             let aspect_ratio = size.width as f64 / size.height as f64;
@@ -116,12 +115,11 @@ impl GameState {
 
         // extra_offset is actually the inverse of the way pan_position works
         self.pan_position += extra_offset;
-        changes.offset = Some(self.pan_position);
-        changes.circles = Some(self.get_circles());
+        self.changes.offset = Some(self.pan_position);
+        self.changes.circles = Some(self.get_circles());
     }
 
-    pub fn input(&mut self, event: &WindowEvent) -> StateChanges {
-        let mut changes = StateChanges::default();
+    pub fn input(&mut self, event: &WindowEvent) {
         let c_char = SmolStr::new_static("c");
 
         match event {
@@ -136,7 +134,7 @@ impl GameState {
                     },
                 ..
             } if *keystr == c_char => {
-                self.clear(&mut changes);
+                self.clear();
             }
 
             // Speed up
@@ -169,7 +167,7 @@ impl GameState {
 
             // Zooming with scroll
             WindowEvent::MouseWheel { delta, .. } => {
-                self.handle_scroll(&mut changes, *delta);
+                self.handle_scroll(*delta);
             }
 
             // Track the cursor
@@ -196,7 +194,7 @@ impl GameState {
 
                     self.pan_position -= diff;
                     self.drag_state = DragState::Dragging { prev_pos: pos };
-                    changes.offset = Some(self.pan_position);
+                    self.changes.offset = Some(self.pan_position);
                 }
             }
 
@@ -230,7 +228,7 @@ impl GameState {
                     },
                 ..
             } => {
-                self.toggle_playing(Some(&mut changes));
+                self.toggle_playing();
             }
 
             // Individual step with Tab
@@ -243,7 +241,7 @@ impl GameState {
                     },
                 ..
             } => {
-                self.step(&mut changes);
+                self.step();
             }
 
             // Cell state toggling with LMB
@@ -252,29 +250,43 @@ impl GameState {
                 button: MouseButton::Left,
                 ..
             } if let Some(mouse_position) = self.mouse_position => {
-                self.handle_left(&mut changes, mouse_position);
+                self.handle_left(mouse_position);
             }
             _ => (),
         };
-        changes
     }
 
-    fn resolve_queue(&mut self, changes: &mut StateChanges) {
+    fn clear_action(&mut self) {
+        self.living_cells.clear();
+        self.step_count = 0;
+        self.living_count_history = vec![0];
+        self.living_cell_count = 0;
+
+        self.changes.circles = Some(Vec::new());
+    }
+
+    fn resolve_queue(&mut self) {
         while let Some(i) = self.input_queue.pop_front() {
             match i {
                 InputAction::Clear => {
-                    self.living_cells.clear();
-                    changes.circles = Some(Vec::new());
+                    self.clear_action();
                 }
                 InputAction::Toggle(cell) => {
-                    if self.living_cells.contains(&cell) {
-                        self.living_cells.remove(&cell);
-                    } else {
-                        self.living_cells.insert(cell);
-                    }
+                    self.left_action(cell);
                 }
             }
         }
+    }
+
+    fn left_action(&mut self, cell_pos: Vector2<i32>) {
+        if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
+            self.living_cells.remove(&i);
+        } else {
+            self.living_cells.insert(cell_pos);
+        }
+
+        let circles = self.get_circles();
+        self.changes.circles = Some(circles)
     }
 }
 
@@ -331,10 +343,12 @@ impl GameState {
             input_queue: VecDeque::new(),
             living_cell_count: 0,
             step_count: 0,
+            living_count_history: vec![0],
+            changes: StateChanges::default(),
         }
     }
 
-    pub fn step(&mut self, _changes: &mut StateChanges) {
+    pub fn step(&mut self) {
         if self
             .thread_data
             .shared
@@ -348,7 +362,7 @@ impl GameState {
         self.thread_data.shared.condvar.notify_all();
     }
 
-    fn clear(&mut self, changes: &mut StateChanges) {
+    pub fn clear(&mut self) {
         if self
             .thread_data
             .shared
@@ -357,12 +371,11 @@ impl GameState {
         {
             self.input_queue.push_back(InputAction::Clear);
         } else {
-            self.living_cells.clear();
-            changes.circles = Some(Vec::new());
+            self.clear_action();
         }
     }
 
-    fn handle_left(&mut self, changes: &mut StateChanges, mouse_position: Vector2<f64>) {
+    fn handle_left(&mut self, mouse_position: Vector2<f64>) {
         let size = self.window.inner_size();
         let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
         if self
@@ -373,19 +386,11 @@ impl GameState {
         {
             self.input_queue.push_back(InputAction::Toggle(cell_pos));
         } else {
-            if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
-                self.living_cells.remove(&i);
-            } else {
-                self.living_cells.insert(cell_pos);
-            }
-
-            let circles = self.get_circles();
-            changes.circles = Some(circles)
+            self.left_action(cell_pos);
         }
     }
 
     pub fn update(&mut self) -> StateChanges {
-        let mut changes = StateChanges::default();
         let should_step = self.loop_state.update(&self.interval);
 
         if should_step
@@ -395,12 +400,12 @@ impl GameState {
                 .computing
                 .load(atomic::Ordering::Relaxed)
         {
-            self.step(&mut changes);
+            self.step();
         }
 
         if let Ok(v) = self.thread_data.local.rx.try_recv() {
             self.living_cells = v;
-            changes.circles = Some(self.get_circles());
+            self.changes.circles = Some(self.get_circles());
             self.thread_data
                 .shared
                 .computing
@@ -408,11 +413,13 @@ impl GameState {
             let mut lock = self.thread_data.shared.notification.lock().unwrap();
             *lock = StepThreadNotification::Waiting;
             self.step_count += 1;
+            self.living_cell_count = self.living_cells.len();
+            self.living_count_history.push(self.living_cell_count);
         }
 
-        self.resolve_queue(&mut changes);
+        self.resolve_queue();
 
-        changes
+        std::mem::take(&mut self.changes)
     }
 }
 
@@ -431,13 +438,16 @@ impl GameState {
             input_queue: VecDeque::new(),
             living_cell_count: 0,
             step_count: 0,
+            living_count_history: vec![0],
         }
     }
 
-    pub fn step(&mut self, changes: &mut StateChanges) {
+    pub fn step(&mut self) {
         self.living_cells = compute_step(&self.living_cells);
-        changes.circles = Some(self.get_circles());
+        self.changes.circles = Some(self.get_circles());
         self.step_count += 1;
+        self.living_cell_count = self.living_cells.len();
+        self.living_count_history.push(self.living_cell_count);
     }
 
     fn clear(&mut self, changes: &mut StateChanges) {
@@ -504,6 +514,16 @@ pub struct StateChanges {
     pub grid_size: Option<f32>,
     pub circles: Option<Vec<Circle>>,
     pub offset: Option<Vector2<f64>>,
+}
+
+impl StateChanges {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn has_changes(&self) -> bool {
+        self.grid_size.is_some() || self.circles.is_some() || self.offset.is_some()
+    }
 }
 
 impl std::ops::AddAssign<StateChanges> for StateChanges {
