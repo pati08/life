@@ -170,6 +170,17 @@ impl Gui {
             egui::Window::new("Simulation Stats")
                 .show(ctx, |ui| {
                     ui.label(format!("Living Cells: {}", game.get_living_count()));
+                    ui.vertical_centered(|ui| {
+                        let reset_button = ui.button(
+                            RichText::new("Reset stats and graph")
+                                .color(Color32::RED)
+                                .strong(),
+                        );
+                        if reset_button.clicked() {
+                            game.step_count = 0;
+                            game.living_count_history = vec![0];
+                        }
+                    });
                     ui.horizontal(|ui| {
                         ui.label(format!("Total Steps: {} ", game.step_count));
                     });
