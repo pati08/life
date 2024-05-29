@@ -30,8 +30,6 @@ type LivingList = FxHashSet<Vector2<i32>>;
 pub struct GameState {
     pan_position: Vector2<f64>,
     living_cells: LivingList,
-    loop_state: LoopState,
-    interval: std::time::Duration,
     window: Arc<Window>,
     mouse_position: Option<Vector2<f64>>,
     grid_size: f32,
@@ -299,33 +297,35 @@ impl GameState {
 #[cfg(feature = "threading")]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        use StepThreadNotification as STN;
+        // use StepThreadNotification as STN;
         let (tx, rx) = mpsc::channel();
-        let condvar = Condvar::new();
-        let notification = Mutex::new(StepThreadNotification::Waiting);
+        // let condvar = Condvar::new();
+        // let notification = Mutex::new(StepThreadNotification::Waiting);
         let shared_thread_data = Arc::new(SharedThreadData {
-            condvar,
-            notification,
+            // condvar,
+            // notification,
             computing: AtomicBool::new(false),
+            loop_state: Mutex::new(LoopState::Stopped),
         });
         let join_handle = {
             let thread_data = Arc::clone(&shared_thread_data);
             std::thread::spawn(move || loop {
-                let cvar = &thread_data.condvar;
-                let lock = &thread_data.notification;
-                let data_guard = lock.lock().unwrap();
-                let mut data_guard = cvar.wait(data_guard).unwrap();
-                match &*data_guard {
-                    STN::Exit => break,
-                    STN::Waiting => (),
-                    STN::Compute(data) => {
-                        thread_data
-                            .computing
-                            .store(true, sync::atomic::Ordering::Relaxed);
-                        tx.send(compute_step(data)).unwrap();
-                        *data_guard = STN::Waiting;
-                    }
-                }
+                let time_left = 
+                // let cvar = &thread_data.condvar;
+                // let lock = &thread_data.notification;
+                // let data_guard = lock.lock().unwrap();
+                // let mut data_guard = cvar.wait(data_guard).unwrap();
+                // match &*data_guard {
+                //     STN::Exit => break,
+                //     STN::Waiting => (),
+                //     STN::Compute(data) => {
+                //         thread_data
+                //             .computing
+                //             .store(true, sync::atomic::Ordering::Relaxed);
+                //         tx.send(compute_step(data)).unwrap();
+                //         *data_guard = STN::Waiting;
+                //     }
+                // }
             })
         };
 
@@ -339,7 +339,7 @@ impl GameState {
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
-            loop_state: LoopState::new(),
+            // loop_state: LoopState::new(),
             interval: DEFAULT_INTERVAL,
             window,
             mouse_position: None,
@@ -492,18 +492,20 @@ impl GameState {
     }
 }
 
-#[allow(dead_code)]
-enum StepThreadNotification {
-    Exit,
-    Waiting,
-    Compute(LivingList),
-}
+// #[allow(dead_code)]
+// enum StepThreadNotification {
+//     Exit,
+//     Waiting,
+//     Compute(LivingList),
+// }
 
 #[allow(dead_code)]
 struct SharedThreadData {
-    notification: Mutex<StepThreadNotification>,
-    condvar: Condvar,
+    // notification: Mutex<StepThreadNotification>,
+    // condvar: Condvar,
     computing: AtomicBool,
+    loop_state: Mutex<LoopState>,
+    interval: Mutex<std::time::Duration>,
 }
 
 #[allow(dead_code)]
@@ -526,10 +528,6 @@ pub struct StateChanges {
 }
 
 impl StateChanges {
-    fn clear(&mut self) {
-        *self = Self::default();
-    }
-
     pub fn has_changes(&self) -> bool {
         self.grid_size.is_some() || self.circles.is_some() || self.offset.is_some()
     }
