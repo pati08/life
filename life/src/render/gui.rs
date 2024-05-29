@@ -179,6 +179,7 @@ impl Gui {
                         if reset_button.clicked() {
                             game.step_count = 0;
                             game.living_count_history = vec![0];
+                            game.toggle_record.clear();
                         }
                     });
                     ui.horizontal(|ui| {

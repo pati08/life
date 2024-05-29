@@ -268,6 +268,7 @@ impl GameState {
         self.living_cell_count = 0;
 
         self.changes.circles = Some(Vec::new());
+        self.toggle_record.clear();
     }
 
     fn resolve_queue(&mut self) {
@@ -422,9 +423,9 @@ impl GameState {
             self.step_count += 1;
             self.living_cell_count = self.living_cells.len();
             self.living_count_history.push(self.living_cell_count);
+            drop(lock);
+            self.resolve_queue();
         }
-
-        self.resolve_queue();
 
         std::mem::take(&mut self.changes)
     }
