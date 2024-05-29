@@ -8,3 +8,4 @@ name = "vec2"
 version = "0.1.5"
 
 [dependencies]
+serde = "1.0"

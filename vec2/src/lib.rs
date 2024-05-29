@@ -1,7 +1,9 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Vector2<T> {
     /// X component of the vector.
     pub x: T,

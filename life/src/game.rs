@@ -1,6 +1,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
+    path::PathBuf,
     sync::{
         self,
         atomic::{self, AtomicBool},
@@ -448,6 +450,7 @@ impl GameState {
             step_count: 0,
             living_count_history: vec![0],
             toggle_record: Vec::new(),
+            changes: StateChanges::default(),
         }
     }
 
@@ -459,12 +462,12 @@ impl GameState {
         self.living_count_history.push(self.living_cell_count);
     }
 
-    fn clear(&mut self, changes: &mut StateChanges) {
+    pub fn clear(&mut self) {
         self.living_cells.clear();
-        changes.circles = Some(Vec::new());
+        self.changes.circles = Some(Vec::new());
     }
 
-    fn handle_left(&mut self, changes: &mut StateChanges, mouse_position: Vector2<f64>) {
+    fn handle_left(&mut self, mouse_position: Vector2<f64>) {
         let size = self.window.inner_size();
         let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
 
@@ -475,20 +478,19 @@ impl GameState {
         }
 
         let circles = self.get_circles();
-        changes.circles = Some(circles)
+        self.changes.circles = Some(circles)
     }
 
     pub fn update(&mut self) -> StateChanges {
-        let mut changes = StateChanges::default();
         let should_step = self.loop_state.update(&self.interval);
 
         if should_step {
-            self.step(&mut changes);
+            self.step();
         }
 
-        self.resolve_queue(&mut changes);
+        self.resolve_queue();
 
-        changes
+        std::mem::take(&mut self.changes)
     }
 }
 
@@ -504,6 +506,46 @@ struct SharedThreadData {
     notification: Mutex<StepThreadNotification>,
     condvar: Condvar,
     computing: AtomicBool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SaveData<'a> {
+    living_cells: Vec<Vector2<i32>>,
+    grid_size: f32,
+    pan_position: Vector2<f64>,
+    filename: Option<&'a str>,
+    created: chrono::DateTime<chrono::Local>,
+}
+
+impl<'a> From<&GameState> for SaveData<'a> {
+    fn from(from: &GameState) -> SaveData<'a> {
+        SaveData {
+            living_cells: from.living_cells.iter().copied().collect(),
+            grid_size: from.grid_size,
+            pan_position: from.pan_position,
+            filename: None,
+            created: chrono::Local::now(),
+        }
+    }
+}
+
+impl SaveData<'_> {
+    fn filename(self, filename: &str) -> SaveData {
+        SaveData {
+            living_cells: self.living_cells,
+            grid_size: self.grid_size,
+            pan_position: self.pan_position,
+            filename: Some(filename),
+            created: self.created,
+        }
+    }
+    fn write(self, dir: Option<&str>) {
+        let writer = std::fs::File::create(
+            dir.unwrap_or(".").to_owned() + self.filename.unwrap_or("saved.json"),
+        )
+        .unwrap();
+        serde_json::to_writer(writer, &self).unwrap();
+    }
 }
 
 #[allow(dead_code)]
