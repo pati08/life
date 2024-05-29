@@ -43,6 +43,11 @@ pub struct GameState {
     pub step_count: u64,
     pub living_count_history: Vec<usize>,
     changes: StateChanges,
+    /// Represents a list of times that the "player" manually toggled a cell.
+    ///
+    /// It is updated using `Self::step_count`, so may not be accurate if that
+    /// is incorrectly manipulated.
+    pub toggle_record: Vec<u64>,
 }
 
 impl GameState {
@@ -286,7 +291,8 @@ impl GameState {
         }
 
         let circles = self.get_circles();
-        self.changes.circles = Some(circles)
+        self.toggle_record.push(self.step_count);
+        self.changes.circles = Some(circles);
     }
 }
 
@@ -345,6 +351,7 @@ impl GameState {
             step_count: 0,
             living_count_history: vec![0],
             changes: StateChanges::default(),
+            toggle_record: Vec::new(),
         }
     }
 
@@ -439,6 +446,7 @@ impl GameState {
             living_cell_count: 0,
             step_count: 0,
             living_count_history: vec![0],
+            toggle_record: Vec::new(),
         }
     }
 

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use ::egui::FontDefinitions;
-use egui_plot::{Line, Plot};
+use egui_plot::{Line, Plot, VLine};
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use wgpu::Device;
@@ -192,8 +192,16 @@ impl Gui {
                         .collect::<Vec<[f64; 2]>>();
                     let line = Line::new(line_values);
                     Plot::new("living_cell_count_plot")
-                        .show_axes(false)
-                        .show(ui, |plot_ui| plot_ui.line(line));
+                        .show_axes(false) // This was causing annoying margins
+                        .show(ui, |plot_ui| {
+                            plot_ui.line(line);
+                            for i in game.toggle_record.iter() {
+                                if *i != 0 {
+                                    plot_ui
+                                        .vline(VLine::new(*i as f64).color(Color32::LIGHT_GREEN));
+                                }
+                            }
+                        });
                 })
                 .expect("Expected open window");
         });
