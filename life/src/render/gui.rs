@@ -131,6 +131,7 @@ impl GuiState {
 
 struct Gui {
     game_state: Arc<Mutex<GameState>>,
+    //repaint_signal: crate::RepaintSignalT,
 }
 
 impl Gui {

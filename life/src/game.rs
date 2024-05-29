@@ -422,6 +422,7 @@ impl GameState {
             self.step_count += 1;
             self.living_cell_count = self.living_cells.len();
             self.living_count_history.push(self.living_cell_count);
+            self.changes.circles = Some(self.get_circles());
         }
 
         self.resolve_queue();

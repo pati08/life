@@ -3,6 +3,7 @@
 #![feature(if_let_guard)]
 #![warn(clippy::todo)]
 
+use epi::backend::RepaintSignal;
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -23,6 +24,26 @@ struct State<'a> {
     window: Arc<Window>,
     render_state: RenderState<'a>,
     game_state: Arc<Mutex<GameState>>,
+    repaint_signal: RepaintSignalT,
+}
+
+/// A custom event type for the winit app.
+pub enum UserEvent {
+    RequestRedraw,
+}
+
+/// This is the repaint signal type that egui needs for requesting a repaint from another thread.
+/// It sends the custom RequestRedraw event to the winit event loop.
+pub struct RepaintSignalT(Arc<std::sync::Mutex<winit::event_loop::EventLoopProxy<UserEvent>>>);
+
+impl epi::backend::RepaintSignal for RepaintSignalT {
+    fn request_repaint(&self) {
+        self.0
+            .lock()
+            .unwrap()
+            .send_event(UserEvent::RequestRedraw)
+            .ok();
+    }
 }
 
 /// The number of cells that will fit across the height of the window by default
@@ -30,8 +51,11 @@ const DEFAULT_GRID_SIZE: f32 = 10.0;
 
 impl<'a> State<'a> {
     /// Create a new state and get its render loop, which it creates
-    pub async fn new() -> (Self, EventLoop<()>) {
-        let event_loop = EventLoop::new().unwrap();
+    pub async fn new() -> (Self, EventLoop<UserEvent>) {
+        let event_loop = winit::event_loop::EventLoopBuilder::<UserEvent>::with_user_event()
+            .build()
+            .unwrap();
+        let repaint_signal = RepaintSignalT(Arc::new(Mutex::new(event_loop.create_proxy())));
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let window = Arc::new(window);
 
@@ -53,6 +77,7 @@ impl<'a> State<'a> {
                 window,
                 render_state,
                 game_state,
+                repaint_signal,
             },
             event_loop,
         )
@@ -67,9 +92,16 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| {
+            let mut needs_repaint: bool = false;
             {
                 let mut game = state.game_state.lock().unwrap();
                 let game_changes = game.update();
+
+                if game_changes.has_changes() {
+                    println!("game has changes");
+                    needs_repaint = true;
+                }
+
                 if let Some(c) = game_changes.circles {
                     state.render_state.update_circles(c);
                 }
@@ -82,6 +114,17 @@ pub async fn run() {
                 }
             }
             let egui_captured = state.render_state.handle_event(&event);
+            if egui_captured {
+                println!("Egui captured event");
+                needs_repaint = true;
+            }
+            if needs_repaint {
+                state.repaint_signal.request_repaint();
+            }
+
+            if let Event::UserEvent(UserEvent::RequestRedraw) = event {
+                state.window.request_redraw();
+            }
 
             if let Event::WindowEvent {
                 window_id,
@@ -115,7 +158,7 @@ pub async fn run() {
                     }
                     WindowEvent::RedrawRequested => {
                         // This tells winit that we want another frame after this one
-                        state.render_state.window().request_redraw();
+                        // state.render_state.window().request_redraw();
 
                         if !surface_configured {
                             return;
