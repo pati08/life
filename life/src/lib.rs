@@ -24,6 +24,7 @@ struct State<'a> {
     render_state: RenderState<'a>,
     game_state: Arc<Mutex<GameState>>,
 }
+//
 
 /// The number of cells that will fit across the height of the window by default
 const DEFAULT_GRID_SIZE: f32 = 10.0;

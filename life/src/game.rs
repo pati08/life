@@ -2,7 +2,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    path::PathBuf,
+    fs,
     sync::{
         self,
         atomic::{self, AtomicBool},
@@ -540,11 +540,19 @@ impl SaveData<'_> {
         }
     }
     fn write(self, dir: Option<&str>) {
-        let writer = std::fs::File::create(
-            dir.unwrap_or(".").to_owned() + self.filename.unwrap_or("saved.json"),
-        )
-        .unwrap();
-        serde_json::to_writer(writer, &self).unwrap();
+        let filepath = dir.unwrap_or(".").to_owned() + self.filename.unwrap_or("saved.json");
+        // let contents: Option<Vec<SaveData>> = if let Ok(f) = fs::read_to_string(&filepath) {
+        //     let data = serde_json::from_str(&f).unwrap();
+        //     // Some(serde_json::from_str(&f).unwrap())
+        //     Some(data)
+        // } else {
+        //     None
+        // };
+        let contents: Option<Vec<SaveData>> = fs::read_to_string(&filepath)
+            .map(|s| serde_json::from_str(&s).unwrap())
+            .ok();
+        let writer = std::fs::File::create(filepath).unwrap();
+        serde_json::to_writer(writer, &[self]).unwrap();
     }
 }
 
@@ -565,16 +573,6 @@ pub struct StateChanges {
     pub grid_size: Option<f32>,
     pub circles: Option<Vec<Circle>>,
     pub offset: Option<Vector2<f64>>,
-}
-
-impl StateChanges {
-    fn clear(&mut self) {
-        *self = Self::default();
-    }
-
-    pub fn has_changes(&self) -> bool {
-        self.grid_size.is_some() || self.circles.is_some() || self.offset.is_some()
-    }
 }
 
 impl std::ops::AddAssign<StateChanges> for StateChanges {
