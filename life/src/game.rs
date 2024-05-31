@@ -530,7 +530,7 @@ impl<'a> From<&GameState> for SaveData<'a> {
 }
 
 impl SaveData<'_> {
-    fn filename(self, filename: &str) -> SaveData {
+    pub fn filename(self, filename: &str) -> SaveData {
         SaveData {
             living_cells: self.living_cells,
             grid_size: self.grid_size,
@@ -539,7 +539,7 @@ impl SaveData<'_> {
             created: self.created,
         }
     }
-    fn write(self, dir: Option<&str>) {
+    pub fn write(self, dir: Option<&str>) -> Result<(), anyhow::Error> {
         let filepath = dir.unwrap_or(".").to_owned() + self.filename.unwrap_or("saved.json");
         // let contents: Option<Vec<SaveData>> = if let Ok(f) = fs::read_to_string(&filepath) {
         //     let data = serde_json::from_str(&f).unwrap();
@@ -548,11 +548,12 @@ impl SaveData<'_> {
         // } else {
         //     None
         // };
-        let contents: Option<Vec<SaveData>> = fs::read_to_string(&filepath)
-            .map(|s| serde_json::from_str(&s).unwrap())
-            .ok();
+        let text = fs::read_to_string(&filepath).unwrap_or(String::from("[]"));
+        let mut contents: Vec<SaveData> = serde_json::from_str(&text)?;
+        contents.push(self);
         let writer = std::fs::File::create(filepath).unwrap();
-        serde_json::to_writer(writer, &[self]).unwrap();
+        serde_json::to_writer(writer, &contents[..]).unwrap();
+        Ok(())
     }
 }
 
