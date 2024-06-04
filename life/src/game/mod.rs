@@ -1,8 +1,12 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use ordered_float::OrderedFloat;
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    fs,
+    fs::{self, File},
+    hash::{Hash, Hasher},
+    io::{Read, Write},
+    path::PathBuf,
     sync::{
         self,
         atomic::{self, AtomicBool},
@@ -20,6 +24,8 @@ use winit::{
 
 use super::render::Circle;
 use vec2::Vector2;
+
+pub mod saving;
 
 /// The interval between simulation steps in auto-play mode.
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(300);
@@ -506,55 +512,6 @@ struct SharedThreadData {
     notification: Mutex<StepThreadNotification>,
     condvar: Condvar,
     computing: AtomicBool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SaveData<'a> {
-    living_cells: Vec<Vector2<i32>>,
-    grid_size: f32,
-    pan_position: Vector2<f64>,
-    filename: Option<&'a str>,
-    created: chrono::DateTime<chrono::Local>,
-}
-
-impl<'a> From<&GameState> for SaveData<'a> {
-    fn from(from: &GameState) -> SaveData<'a> {
-        SaveData {
-            living_cells: from.living_cells.iter().copied().collect(),
-            grid_size: from.grid_size,
-            pan_position: from.pan_position,
-            filename: None,
-            created: chrono::Local::now(),
-        }
-    }
-}
-
-impl SaveData<'_> {
-    pub fn filename(self, filename: &str) -> SaveData {
-        SaveData {
-            living_cells: self.living_cells,
-            grid_size: self.grid_size,
-            pan_position: self.pan_position,
-            filename: Some(filename),
-            created: self.created,
-        }
-    }
-    pub fn write(self, dir: Option<&str>) -> Result<(), anyhow::Error> {
-        let filepath = dir.unwrap_or(".").to_owned() + self.filename.unwrap_or("saved.json");
-        // let contents: Option<Vec<SaveData>> = if let Ok(f) = fs::read_to_string(&filepath) {
-        //     let data = serde_json::from_str(&f).unwrap();
-        //     // Some(serde_json::from_str(&f).unwrap())
-        //     Some(data)
-        // } else {
-        //     None
-        // };
-        let text = fs::read_to_string(&filepath).unwrap_or(String::from("[]"));
-        let mut contents: Vec<SaveData> = serde_json::from_str(&text)?;
-        contents.push(self);
-        let writer = std::fs::File::create(filepath).unwrap();
-        serde_json::to_writer(writer, &contents[..]).unwrap();
-        Ok(())
-    }
 }
 
 #[allow(dead_code)]
