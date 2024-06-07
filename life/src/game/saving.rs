@@ -1,18 +1,17 @@
 use super::GameState;
 use ordered_float::OrderedFloat;
-use rustc_hash::FxHasher;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    hash::{Hash, Hasher},
-    io::Read,
-    path::PathBuf,
-};
+use std::{fs::File, hash::Hash, io::Read, path::PathBuf};
 use vec2::Vector2;
 
+/// A representation of a game save file. The saves are stored in memory unless
+/// written to disk via `SaveFile::write_to_disk`.
 pub struct SaveFile {
-    saves: Vec<(SaveGame, u64)>,
+    /// A vector of the saves
+    saves: Vec<SaveGame>,
+    /// A write-only file handle for the saves file
     file: File,
+    /// Whether or not the save file is newly created
     is_new: bool,
 }
 
@@ -20,23 +19,12 @@ impl SaveFile {
     fn new_from_disk(filepath: PathBuf) -> Result<Self, anyhow::Error> {
         // let existing_data: Vec<SaveGame> = {
         //     File::open(filepath).map(|f| f.read_to_string())
-        // }kk
-        let existing_data: Vec<SaveGame> = {
+        // }
+        let data: Vec<SaveGame> = {
             let mut buf = String::new();
             File::open(&filepath)?.read_to_string(&mut buf)?;
             serde_json::from_str(&buf)?
         };
-        let data = existing_data
-            .into_iter()
-            .map(|v| {
-                let hash = {
-                    let mut hasher = FxHasher::default();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                };
-                (v, hash)
-            })
-            .collect();
         let file = File::create(filepath)?;
         Ok(Self {
             saves: data,
@@ -68,23 +56,16 @@ impl SaveFile {
     }
 
     pub fn add_save(&mut self, save: SaveGame) {
-        let hash = {
-            let mut hasher = FxHasher::default();
-            save.hash(&mut hasher);
-            hasher.finish()
-        };
-        self.saves.push((save, hash));
+        self.saves.push(save);
     }
 
-    pub fn delete_save(&mut self, file_hash: u64) -> bool {
-        let index = if let Some(i) = self.saves.iter().position(|i| i.1 == file_hash) {
-            i
+    pub fn delete_save(&mut self, index: usize) -> bool {
+        if self.saves.len() > index {
+            self.saves.remove(index);
+            true
         } else {
-            return false;
-        };
-
-        self.saves.remove(index);
-        true
+            false
+        }
     }
 }
 
