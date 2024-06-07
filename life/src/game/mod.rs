@@ -22,7 +22,9 @@ use winit::{
     window::Window,
 };
 
-use super::render::Circle;
+use crate::game::saving::SaveFile;
+
+use super::render::Cell;
 use vec2::Vector2;
 
 pub mod saving;
@@ -37,25 +39,42 @@ type LivingList = FxHashSet<Vector2<i32>>;
 
 pub struct GameState {
     pan_position: Vector2<f64>,
+    /// A hashset of cells (by coordinates) that are living.
     living_cells: LivingList,
+    /// Timing and play information
     loop_state: LoopState,
+    /// The interval between steps in auto-play mode
     interval: std::time::Duration,
     window: Arc<Window>,
     mouse_position: Option<Vector2<f64>>,
     grid_size: f32,
     drag_state: DragState,
+    /// A queue of inputs that were made during computation and therefore
+    /// deferred.
     input_queue: VecDeque<InputAction>,
     #[cfg(feature = "threading")]
+    /// Synchronization between the main thread and the computing thread
     thread_data: ThreadData,
     living_cell_count: usize,
+
+    /// These are for the statistics view
     pub step_count: u64,
     pub living_count_history: Vec<usize>,
+
+    /// Changes to the state between renders are tracked here if they are
+    /// relevant to the renderer so that they can be passed back on the next
+    /// update.
     changes: StateChanges,
+
     /// Represents a list of times that the "player" manually toggled a cell.
     ///
     /// It is updated using `Self::step_count`, so may not be accurate if that
     /// is incorrectly manipulated.
     pub toggle_record: Vec<u64>,
+
+    /// Saving data that is kept in memory during play and saved to disk when
+    /// the game is closed.
+    pub save_file: Option<saving::SaveFile>,
 }
 
 impl GameState {
@@ -63,6 +82,7 @@ impl GameState {
         self.loop_state.is_playing()
     }
 
+    /// The current number of living cells
     pub fn get_living_count(&self) -> usize {
         self.living_cell_count
     }
@@ -75,6 +95,7 @@ impl GameState {
         self.interval = to;
     }
 
+    /// Toggles playing. If it is starting, then it steps immediately.
     pub fn toggle_playing(&mut self) {
         if self.loop_state.is_playing() {
             self.loop_state = LoopState::Stopped;
@@ -85,11 +106,12 @@ impl GameState {
         }
     }
 
-    fn get_circles(&self) -> Vec<Circle> {
-        let res: Vec<Circle> = self
+    /// Get a vector of all the cells that should be rendered
+    fn get_cells(&self) -> Vec<Cell> {
+        let res: Vec<Cell> = self
             .living_cells
             .iter()
-            .map(|i| to_circle(*i, self.grid_size))
+            .map(|i| to_cell(*i, self.grid_size))
             .collect();
         res
     }
@@ -129,10 +151,10 @@ impl GameState {
         // extra_offset is actually the inverse of the way pan_position works
         self.pan_position += extra_offset;
         self.changes.offset = Some(self.pan_position);
-        self.changes.circles = Some(self.get_circles());
+        self.changes.circles = Some(self.get_cells());
     }
 
-    pub fn input(&mut self, event: &WindowEvent) {
+    pub fn handle_window_event(&mut self, event: &WindowEvent) {
         let c_char = SmolStr::new_static("c");
 
         match event {
@@ -269,6 +291,7 @@ impl GameState {
         };
     }
 
+    /// Clear the screen
     fn clear_action(&mut self) {
         self.living_cells.clear();
         self.step_count = 0;
@@ -279,6 +302,7 @@ impl GameState {
         self.toggle_record.clear();
     }
 
+    /// Resolve the input queue (`self.input_queue`)
     fn resolve_queue(&mut self) {
         while let Some(i) = self.input_queue.pop_front() {
             match i {
@@ -292,6 +316,8 @@ impl GameState {
         }
     }
 
+    /// Handle a left click by toggling the particular cell. This should not be
+    /// called if the click was on the GUI.
     fn left_action(&mut self, cell_pos: Vector2<i32>) {
         if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
             self.living_cells.remove(&i);
@@ -299,7 +325,7 @@ impl GameState {
             self.living_cells.insert(cell_pos);
         }
 
-        let circles = self.get_circles();
+        let circles = self.get_cells();
         self.toggle_record.push(self.step_count);
         self.changes.circles = Some(circles);
     }
@@ -345,6 +371,8 @@ impl GameState {
             shared: shared_thread_data,
         };
 
+        let save_file = SaveFile::new("./save.json".into()).unwrap();
+
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
@@ -361,6 +389,7 @@ impl GameState {
             living_count_history: vec![0],
             changes: StateChanges::default(),
             toggle_record: Vec::new(),
+            save_file: Some(save_file),
         }
     }
 
@@ -421,7 +450,7 @@ impl GameState {
 
         if let Ok(v) = self.thread_data.local.rx.try_recv() {
             self.living_cells = v;
-            self.changes.circles = Some(self.get_circles());
+            self.changes.circles = Some(self.get_cells());
             self.thread_data
                 .shared
                 .computing
@@ -529,7 +558,7 @@ struct LocalThreadData {
 #[derive(Default)]
 pub struct StateChanges {
     pub grid_size: Option<f32>,
-    pub circles: Option<Vec<Circle>>,
+    pub circles: Option<Vec<Cell>>,
     pub offset: Option<Vector2<f64>>,
 }
 
@@ -601,12 +630,12 @@ enum InputAction {
     Toggle(Vector2<i32>),
 }
 
-fn to_circle(cell: Vector2<i32>, grid_size: f32) -> Circle {
+fn to_cell(cell: Vector2<i32>, grid_size: f32) -> Cell {
     let cell = Vector2::new(
         cell.x as f32 * grid_size + grid_size / 2.0,
         cell.y as f32 * grid_size + grid_size / 2.0,
     );
-    Circle {
+    Cell {
         // location: [cell.x - pan.x as f32, cell.y - (pan.y as f32)],
         location: [cell.x, cell.y],
     }
@@ -671,10 +700,18 @@ fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
     3 == *count || (2 == *count && prev.contains(coords))
 }
 
-#[cfg(feature = "threading")]
 impl Drop for GameState {
     fn drop(&mut self) {
-        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
-        *noti_lock = StepThreadNotification::Exit;
+        #[cfg(feature = "threading")]
+        {
+            // Terminate the processing thread
+            let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+            *noti_lock = StepThreadNotification::Exit;
+        }
+
+        // Write the save file to the disk
+        if let Err(e) = std::mem::take(&mut self.save_file).unwrap().write_to_disk() {
+            log::error!("Failed to write saves with error:\n{}", e);
+        };
     }
 }

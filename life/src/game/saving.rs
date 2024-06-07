@@ -1,3 +1,15 @@
+use super::GameState;
+use ordered_float::OrderedFloat;
+use rustc_hash::FxHasher;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    hash::{Hash, Hasher},
+    io::Read,
+    path::PathBuf,
+};
+use vec2::Vector2;
+
 pub struct SaveFile {
     saves: Vec<(SaveGame, u64)>,
     file: File,

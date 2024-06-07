@@ -24,13 +24,12 @@ struct State<'a> {
     render_state: RenderState<'a>,
     game_state: Arc<Mutex<GameState>>,
 }
-//
 
 /// The number of cells that will fit across the height of the window by default
 const DEFAULT_GRID_SIZE: f32 = 10.0;
 
 impl<'a> State<'a> {
-    /// Create a new state and get its render loop, which it creates
+    /// Create a new state and get its accompanying event loop
     pub async fn new() -> (Self, EventLoop<()>) {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -68,6 +67,7 @@ pub async fn run() {
 
     event_loop
         .run(move |event, control_flow| {
+            // Update the game state. TODO: move this logic into rendering
             {
                 let mut game = state.game_state.lock().unwrap();
                 let game_changes = game.update();
@@ -82,7 +82,13 @@ pub async fn run() {
                     state.render_state.update_offset(offset);
                 }
             }
+
             let egui_captured = state.render_state.handle_event(&event);
+
+            // Pass memory warnings to the log output
+            if let Event::MemoryWarning = event {
+                log::warn!("Warning: low memory");
+            };
 
             if let Event::WindowEvent {
                 window_id,
@@ -90,9 +96,11 @@ pub async fn run() {
             } = event
                 && window_id == state.render_state.window().id()
             {
+                // If the gui didn't capture the event, then hand it to the game
+                // or, if it was the escape key, exit
                 if !egui_captured {
                     let mut game = state.game_state.lock().unwrap();
-                    game.input(event);
+                    game.handle_window_event(event);
 
                     if let WindowEvent::KeyboardInput {
                         event:
@@ -118,6 +126,7 @@ pub async fn run() {
                         // This tells winit that we want another frame after this one
                         state.render_state.window().request_redraw();
 
+                        // We can't draw if the surface is not properly configured
                         if !surface_configured {
                             return;
                         }

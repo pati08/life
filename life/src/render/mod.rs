@@ -17,14 +17,14 @@ mod texture;
 /// Although the circle generally uses normalized device coordinates, it will
 /// adjust for aspect ratio.
 #[derive(Debug)]
-pub struct Circle {
+pub struct Cell {
     /// Where the circle will be drawn on the screen, between 0 and 1, where 1
     /// is the top-left and formatted as x, y. This is the position of the
     /// top-left corner of it's bounding box.
     pub location: [f32; 2],
 }
 
-impl Circle {
+impl Cell {
     fn as_instance(&self, _radius: f32) -> Instance {
         let normalized_location = [
             self.location[0] * 2.0 - 1.0,
@@ -206,7 +206,7 @@ pub struct RenderState<'a> {
     render_pipeline: wgpu::RenderPipeline,
     window: Arc<Window>,
     num_vertices: u32,
-    circles: Vec<Circle>,
+    circles: Vec<Cell>,
     grid_size: f32,
     rsc: BuffersAndGroups,
     bg_render_pipeline: wgpu::RenderPipeline,
@@ -666,7 +666,7 @@ impl<'a> RenderState<'a> {
     /// Update the circles to be rendered.
     ///
     /// Automatically allocates new buffers when their capacity is insufficient
-    pub fn update_circles(&mut self, circles: Vec<Circle>) {
+    pub fn update_circles(&mut self, circles: Vec<Cell>) {
         self.circles = circles;
         let new_instances = self
             .circles
