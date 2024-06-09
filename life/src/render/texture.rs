@@ -1,6 +1,7 @@
 use anyhow::*;
 use image::GenericImageView;
 
+/// A texture that has been loaded for rendering.
 pub struct Texture {
     #[allow(dead_code)]
     pub texture: wgpu::Texture,
@@ -9,6 +10,7 @@ pub struct Texture {
 }
 
 impl Texture {
+    /// Load a texture from srgb bytes
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -19,6 +21,7 @@ impl Texture {
         Self::from_image(device, queue, &img, Some(label))
     }
 
+    /// Load a texture from any image format
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -33,6 +36,8 @@ impl Texture {
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
+
+        // Create the texture on the GPU
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label,
             size,
@@ -44,6 +49,7 @@ impl Texture {
             view_formats: &[],
         });
 
+        // Write the texture to the provided queue for rendering
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
@@ -60,6 +66,7 @@ impl Texture {
             size,
         );
 
+        // Create the actual view and sampler that the shader will use
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,

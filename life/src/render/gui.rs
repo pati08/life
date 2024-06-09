@@ -24,6 +24,7 @@ pub struct GuiState {
 }
 
 impl GuiState {
+    /// Handle a winit event. Returns `true` if the event is captured by the gui.
     pub fn handle_event<T>(&mut self, event: &Event<T>) -> bool {
         let is_keyup = matches!(
             event,
@@ -88,7 +89,8 @@ impl GuiState {
 
         // Draw the demo application.
         self.app.ui(&self.platform.context());
-        // End the UI frame. We could now handle the output and draw the UI with the backend.
+        // End the UI frame. We could now handle the output and draw the UI with
+        // the backend.
         let full_output = self.platform.end_frame(Some(&self.window));
         let paint_jobs = self
             .platform
@@ -129,6 +131,8 @@ impl GuiState {
     }
 }
 
+/// The graphical user interface's persisted state, which contains everything
+/// it needs to render to an `Egui::Context`. 
 struct Gui {
     game_state: Arc<Mutex<GameState>>,
 }
@@ -136,8 +140,11 @@ struct Gui {
 impl Gui {
     const PLAYING_TEXT: &'static str = "Playing \u{23F5}";
     const NOT_PLAYING_TEXT: &'static str = "Stopped \u{23F8}";
+
+    /// Render the interface to an `Egui::Context`.
     fn ui(&mut self, ctx: &Context) {
         let mut game = self.game_state.lock().unwrap();
+        // Top panel with some controls
         egui::containers::panel::TopBottomPanel::top(Id::new("top_panel")).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let reset_button =
@@ -166,45 +173,45 @@ impl Gui {
                     .clamp_to_range(true);
                 ui.add(speed_slider);
             });
-
-            egui::Window::new("Simulation Stats")
-                .show(ctx, |ui| {
-                    ui.label(format!("Living Cells: {}", game.get_living_count()));
-                    ui.vertical_centered(|ui| {
-                        let reset_button = ui.button(
-                            RichText::new("Reset stats and graph")
-                                .color(Color32::RED)
-                                .strong(),
-                        );
-                        if reset_button.clicked() {
-                            game.step_count = 0;
-                            game.living_count_history = vec![0];
-                            game.toggle_record.clear();
+        });
+        // Collapsable window with statistics shown
+        egui::Window::new("Simulation Stats")
+            .show(ctx, |ui| {
+                ui.label(format!("Living Cells: {}", game.get_living_count()));
+                ui.vertical_centered(|ui| {
+                    let reset_button = ui.button(
+                        RichText::new("Reset stats and graph")
+                            .color(Color32::RED)
+                            .strong(),
+                    );
+                    if reset_button.clicked() {
+                        game.step_count = 0;
+                        game.living_count_history = vec![0];
+                        game.toggle_record.clear();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(format!("Total Steps: {} ", game.step_count));
+                });
+                let line_values = game
+                    .living_count_history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, j)| [i as f64, *j as f64])
+                    .collect::<Vec<[f64; 2]>>();
+                let line = Line::new(line_values);
+                Plot::new("living_cell_count_plot")
+                    .show_axes(false) // This was causing annoying margins
+                    .show(ui, |plot_ui| {
+                        plot_ui.line(line);
+                        for i in game.toggle_record.iter() {
+                            if *i != 0 {
+                                plot_ui
+                                    .vline(VLine::new(*i as f64).color(Color32::LIGHT_GREEN));
+                            }
                         }
                     });
-                    ui.horizontal(|ui| {
-                        ui.label(format!("Total Steps: {} ", game.step_count));
-                    });
-                    let line_values = game
-                        .living_count_history
-                        .iter()
-                        .enumerate()
-                        .map(|(i, j)| [i as f64, *j as f64])
-                        .collect::<Vec<[f64; 2]>>();
-                    let line = Line::new(line_values);
-                    Plot::new("living_cell_count_plot")
-                        .show_axes(false) // This was causing annoying margins
-                        .show(ui, |plot_ui| {
-                            plot_ui.line(line);
-                            for i in game.toggle_record.iter() {
-                                if *i != 0 {
-                                    plot_ui
-                                        .vline(VLine::new(*i as f64).color(Color32::LIGHT_GREEN));
-                                }
-                            }
-                        });
-                })
-                .expect("Expected open window");
-        });
+            })
+            .expect("Expected open window");
     }
 }

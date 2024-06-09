@@ -41,8 +41,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let x = in.tex_coords.x;
     let y = in.tex_coords.y;
     let a = res.x / res.y;
-    let tex_coords = (vec2<f32>(0.5 + ((2 * x * a) - a) / 2, y) + offset) / grid_size;
+    // Compute the the background texture coordinates
+    let tex_coords = (vec2<f32>(0.5 + ((2 * x * a) - a) / 2, y) + o) / grid_size;
 
+    // Fade out the texture when very zoomed out
     let alpha_mod = smoothstep(0.01, 0.02, grid_size);
     return textureSample(t_diffuse, s_diffuse, tex_coords) * vec4<f32>(1, 1, 1, alpha_mod);
 }

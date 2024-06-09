@@ -145,7 +145,7 @@ impl GameState {
         // extra_offset is actually the inverse of the way pan_position works
         self.pan_position += extra_offset;
         self.changes.offset = Some(self.pan_position);
-        self.changes.circles = Some(self.get_cells());
+        self.changes.cells = Some(self.get_cells());
     }
 
     pub fn handle_window_event(&mut self, event: &WindowEvent) {
@@ -292,7 +292,7 @@ impl GameState {
         self.living_count_history = vec![0];
         self.living_cell_count = 0;
 
-        self.changes.circles = Some(Vec::new());
+        self.changes.cells = Some(Vec::new());
         self.toggle_record.clear();
     }
 
@@ -319,9 +319,9 @@ impl GameState {
             self.living_cells.insert(cell_pos);
         }
 
-        let circles = self.get_cells();
+        let cells = self.get_cells();
         self.toggle_record.push(self.step_count);
-        self.changes.circles = Some(circles);
+        self.changes.cells = Some(cells);
     }
 }
 
@@ -444,7 +444,7 @@ impl GameState {
 
         if let Ok(v) = self.thread_data.local.rx.try_recv() {
             self.living_cells = v;
-            self.changes.circles = Some(self.get_cells());
+            self.changes.cells = Some(self.get_cells());
             self.thread_data
                 .shared
                 .computing
@@ -485,7 +485,7 @@ impl GameState {
 
     pub fn step(&mut self) {
         self.living_cells = compute_step(&self.living_cells);
-        self.changes.circles = Some(self.get_circles());
+        self.changes.cells = Some(self.get_cells());
         self.step_count += 1;
         self.living_cell_count = self.living_cells.len();
         self.living_count_history.push(self.living_cell_count);
@@ -493,7 +493,7 @@ impl GameState {
 
     pub fn clear(&mut self) {
         self.living_cells.clear();
-        self.changes.circles = Some(Vec::new());
+        self.changes.cells = Some(Vec::new());
     }
 
     fn handle_left(&mut self, mouse_position: Vector2<f64>) {
@@ -506,8 +506,8 @@ impl GameState {
             self.living_cells.insert(cell_pos);
         }
 
-        let circles = self.get_circles();
-        self.changes.circles = Some(circles)
+        let cells = self.get_cells();
+        self.changes.cells = Some(cells)
     }
 
     pub fn update(&mut self) -> StateChanges {
@@ -552,7 +552,7 @@ struct LocalThreadData {
 #[derive(Default)]
 pub struct StateChanges {
     pub grid_size: Option<f32>,
-    pub circles: Option<Vec<Cell>>,
+    pub cells: Option<Vec<Cell>>,
     pub offset: Option<Vector2<f64>>,
 }
 
@@ -561,8 +561,8 @@ impl std::ops::AddAssign<StateChanges> for StateChanges {
         if other.grid_size.is_some() {
             self.grid_size = other.grid_size
         };
-        if other.circles.is_some() {
-            self.circles = other.circles
+        if other.cells.is_some() {
+            self.cells = other.cells
         };
         if other.offset.is_some() {
             self.offset = other.offset

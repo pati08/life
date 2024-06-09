@@ -58,5 +58,7 @@ var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    // At exremely far zooms, interpolate between the texture and a solid color
+    let factor = smoothstep(0.01, 0.02, radius);
+    return factor * textureSample(t_diffuse, s_diffuse, in.tex_coords) + (color * (1 - factor));
 }

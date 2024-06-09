@@ -71,8 +71,8 @@ pub async fn run() {
             {
                 let mut game = state.game_state.lock().unwrap();
                 let game_changes = game.update();
-                if let Some(c) = game_changes.circles {
-                    state.render_state.update_circles(c);
+                if let Some(c) = game_changes.cells {
+                    state.render_state.update_cells(c);
                 }
                 if let Some(v) = game_changes.grid_size {
                     state.render_state.change_grid_size(v);

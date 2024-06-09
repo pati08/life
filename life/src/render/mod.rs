@@ -8,17 +8,18 @@ use winit::window::Window;
 
 use crate::game::GameState;
 
-pub const CIRCLE_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// The color of living cells when using solid coloring instead of a texture
+pub const CELL_COLOR: [f32; 4] = [0.17, 0.65, 0.22, 1.0]; // #2CA738
 
 mod texture;
 
-/// A circle that will be rendered to the screen.
+/// A cell that will be rendered to the screen.
 ///
-/// Although the circle generally uses normalized device coordinates, it will
+/// Although the cell generally uses normalized device coordinates, it will
 /// adjust for aspect ratio.
 #[derive(Debug)]
 pub struct Cell {
-    /// Where the circle will be drawn on the screen, between 0 and 1, where 1
+    /// Where the cell will be drawn on the screen, between 0 and 1, where 1
     /// is the top-left and formatted as x, y. This is the position of the
     /// top-left corner of it's bounding box.
     pub location: [f32; 2],
@@ -38,7 +39,7 @@ impl Cell {
     }
 }
 
-fn circle_vertices(radius: f32) -> [Vertex; 6] {
+fn cell_vertices(radius: f32) -> [Vertex; 6] {
     [
         Vertex {
             position: [-radius, -radius, 0.0],
@@ -79,20 +80,15 @@ impl Instance {
         use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Instance>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We'll have to reassemble the mat4 in the shader.
+                // The offset
                 wgpu::VertexAttribute {
                     offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials, we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5, not conflict with them later
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
+                // The center
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 2,
@@ -111,6 +107,7 @@ struct Vertex {
 }
 
 impl Vertex {
+    /// Get the buffer layout of the vertex
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -130,6 +127,7 @@ impl Vertex {
             ],
         }
     }
+    /// Get vertices to fill the whole screen
     fn new_bg() -> [Vertex; 6] {
         [
             Vertex {
@@ -168,6 +166,7 @@ struct RenderCore<'a> {
     config: wgpu::SurfaceConfiguration,
 }
 
+/// The buffers, bind groups, and textures that the renderer requires
 struct BuffersAndGroups {
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
@@ -200,13 +199,15 @@ struct BuffersAndGroups {
 
 mod gui;
 
+/// The state of the renderer. It contains the graphical user interface as well
+/// as all the information required to render to the screen.
 pub struct RenderState<'a> {
     core: RenderCore<'a>,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     window: Arc<Window>,
     num_vertices: u32,
-    circles: Vec<Cell>,
+    cells: Vec<Cell>,
     grid_size: f32,
     rsc: BuffersAndGroups,
     bg_render_pipeline: wgpu::RenderPipeline,
@@ -214,14 +215,14 @@ pub struct RenderState<'a> {
 }
 
 impl<'a> RenderState<'a> {
-    /// Create a new RenderState, ready for rendering.
+    /// Create a new `RenderState`, ready for rendering.
     ///
     /// # Args
     /// window:
-    /// A reference to a winit window, to which we will be rendering
+    /// An `Arc` to a winit window, to which we will be rendering
     ///
     /// grid_size:
-    /// The size of the grid. This is from 0 to 1 * the height of the viewport
+    /// The size of each grid cell as a fraction of the viewport's height.
     pub async fn new(
         window: Arc<Window>,
         grid_size: f32,
@@ -263,9 +264,9 @@ impl<'a> RenderState<'a> {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
+        // Shader code in this assumes an Srgb surface texture. Using a different
+        // one will result all the colors comming out darker. If we want to support non
+        // Srgb surfaces, we'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
             .iter()
@@ -283,6 +284,7 @@ impl<'a> RenderState<'a> {
             desired_maximum_frame_latency: 2,
         };
 
+        // Create a buffer and bind group for the resolution of the window
         let res_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Resolution Buffer"),
             contents: bytemuck::cast_slice(&[size.width as f32, size.height as f32]),
@@ -313,12 +315,13 @@ impl<'a> RenderState<'a> {
             }],
         });
 
-        let radius_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        // Create a buffer and bind group for the grid size
+        let grid_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Radius Buffer"),
             contents: bytemuck::cast_slice(&[grid_size]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let radius_bind_group_layout =
+        let grid_size_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Radius Bind Group Layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -332,18 +335,19 @@ impl<'a> RenderState<'a> {
                     count: None,
                 }],
             });
-        let radius_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let grid_size_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Radius Bind Group"),
-            layout: &radius_bind_group_layout,
+            layout: &grid_size_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: radius_buffer.as_entire_binding(),
+                resource: grid_size_buffer.as_entire_binding(),
             }],
         });
 
+        // Create a buffer and bind group for the color
         let color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Color Buffer"),
-            contents: bytemuck::cast_slice(&CIRCLE_COLOR),
+            contents: bytemuck::cast_slice(&CELL_COLOR),
             usage: wgpu::BufferUsages::UNIFORM,
         });
         let color_bind_group_layout =
@@ -442,7 +446,7 @@ impl<'a> RenderState<'a> {
             label: Some("bg_texture_bind_group"),
         });
 
-        let vertices = circle_vertices(grid_size);
+        let vertices = cell_vertices(grid_size);
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -501,7 +505,7 @@ impl<'a> RenderState<'a> {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &res_bind_group_layout,
-                    &radius_bind_group_layout,
+                    &grid_size_bind_group_layout,
                     &color_bind_group_layout,
                     &texture_bind_group_layout,
                     &offset_bind_group_layout,
@@ -562,7 +566,7 @@ impl<'a> RenderState<'a> {
                 label: Some("BG Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &offset_bind_group_layout,
-                    &radius_bind_group_layout,
+                    &grid_size_bind_group_layout,
                     &texture_bind_group_layout,
                     &res_bind_group_layout,
                 ],
@@ -620,8 +624,8 @@ impl<'a> RenderState<'a> {
             instance_buffer,
             instance_buffer_capacity: start_capacity,
 
-            radius_buffer,
-            radius_bind_group,
+            radius_buffer: grid_size_buffer,
+            radius_bind_group: grid_size_bind_group,
 
             color_buffer,
             color_bind_group,
@@ -655,7 +659,7 @@ impl<'a> RenderState<'a> {
             render_pipeline,
             window,
             num_vertices: vertices.len() as u32,
-            circles: Vec::new(),
+            cells: Vec::new(),
             grid_size,
             rsc: bag,
             bg_render_pipeline,
@@ -663,20 +667,26 @@ impl<'a> RenderState<'a> {
         }
     }
 
-    /// Update the circles to be rendered.
+    /// Update the cells to be rendered.
     ///
     /// Automatically allocates new buffers when their capacity is insufficient
-    pub fn update_circles(&mut self, circles: Vec<Cell>) {
-        self.circles = circles;
+    pub fn update_cells(&mut self, cells: Vec<Cell>) {
+        // Update internal record of the cells
+        self.cells = cells;
+
+        // Convert the cells to instances for the shader
         let new_instances = self
-            .circles
+            .cells
             .iter()
             .map(|c| c.as_instance(self.grid_size))
             .collect::<Vec<_>>();
 
+        // Determine the required size of the buffer to hold all the cells
         let instance_count = new_instances.len();
         let new_size = (instance_count as f32 * 1.5) as u64;
 
+        // Create a new buffer and replace the old one if needed. The new buffer
+        // grows exponentially to get amortized O(1) insertions.
         if instance_count as u64 > self.rsc.instance_buffer_capacity {
             let instance_buffer = self.core.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Instance Buffer"),
@@ -687,12 +697,14 @@ impl<'a> RenderState<'a> {
                     | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
+            // Write the data
             self.core
                 .queue
                 .write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&new_instances));
             self.rsc.instance_buffer_capacity = new_size;
             self.rsc.instance_buffer = instance_buffer;
         } else {
+            // Write the data
             self.core.queue.write_buffer(
                 &self.rsc.instance_buffer,
                 0,
@@ -701,10 +713,12 @@ impl<'a> RenderState<'a> {
         }
     }
 
+    /// Get an `Arc` to the current window being rendered to.
     pub fn window(&self) -> Arc<Window> {
         self.window.clone()
     }
 
+    /// Update the panning value used in the shader.
     pub fn update_offset(&mut self, new_offset: vec2::Vector2<f32>) {
         let offset: [f32; 2] = new_offset.into();
         self.core
@@ -712,12 +726,12 @@ impl<'a> RenderState<'a> {
             .write_buffer(&self.rsc.offset_buffer, 0, bytemuck::cast_slice(&offset));
     }
 
-    #[allow(dead_code)]
+    /// Change the grid size used for rendering.
     pub fn change_grid_size(&self, new: f32) {
         if new <= 0.0 {
             return;
         }
-        let vertices = circle_vertices(new);
+        let vertices = cell_vertices(new);
         self.core
             .queue
             .write_buffer(&self.rsc.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
@@ -727,6 +741,7 @@ impl<'a> RenderState<'a> {
             .write_buffer(&self.rsc.radius_buffer, 0, bytemuck::cast_slice(&[new]));
     }
 
+    /// Reconfigure and update the renderer for a new resolution
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
@@ -745,16 +760,19 @@ impl<'a> RenderState<'a> {
         );
     }
 
+    /// Reconfigure the surface
     pub fn reconfigure(&mut self) {
         self.resize(self.size);
     }
 
+    /// Handle a `winit::event::Event` and return whether or not it was captured.
     pub fn handle_event<T>(&mut self, event: &winit::event::Event<T>) -> bool {
         self.egui.handle_event(event)
     }
 
     pub fn update(&mut self) {}
 
+    /// Render to the window.
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.core.surface.get_current_texture()?;
         let view = output
@@ -768,6 +786,7 @@ impl<'a> RenderState<'a> {
                     label: Some("Render Encoder"),
                 });
 
+        // Create and complete the render pass for the background
         {
             let mut first_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("BG Render Pass"),
@@ -800,6 +819,7 @@ impl<'a> RenderState<'a> {
 
             first_render_pass.draw(0..6, 0..1);
         }
+        // Create and complete the primary render pass, for the cells.
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -826,9 +846,10 @@ impl<'a> RenderState<'a> {
 
             render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));
 
-            render_pass.draw(0..self.num_vertices, 0..self.circles.len() as _);
+            render_pass.draw(0..self.num_vertices, 0..self.cells.len() as _);
         }
 
+        // Render the GUI
         let (encoder, egui_tdelta) =
             self.egui
                 .render(&self.core.config, &self.core.queue, &view, encoder);
