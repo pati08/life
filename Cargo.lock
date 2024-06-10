@@ -512,6 +512,7 @@ checksum = "584c5d1bf9a67b25778a3323af222dbe1a1feb532190e103901187f92c7fe29a"
 dependencies = [
  "ahash 0.8.11",
  "epaint 0.27.2",
+ "log",
  "nohash-hasher",
 ]
 
@@ -597,6 +598,7 @@ dependencies = [
  "bytemuck",
  "ecolor",
  "emath 0.27.2",
+ "log",
  "nohash-hasher",
  "parking_lot",
 ]

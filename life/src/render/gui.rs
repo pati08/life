@@ -174,7 +174,7 @@ impl Gui {
                 ui.add(speed_slider);
             });
         });
-        // Collapsable window with statistics shown
+        // Collapsible window with statistics shown
         egui::Window::new("Simulation Stats")
             .show(ctx, |ui| {
                 ui.label(format!("Living Cells: {}", game.get_living_count()));
@@ -190,9 +190,7 @@ impl Gui {
                         game.toggle_record.clear();
                     }
                 });
-                ui.horizontal(|ui| {
-                    ui.label(format!("Total Steps: {} ", game.step_count));
-                });
+                ui.label(format!("Total Steps: {} ", game.step_count));
                 let line_values = game
                     .living_count_history
                     .iter()
@@ -213,5 +211,18 @@ impl Gui {
                     });
             })
             .expect("Expected open window");
+
+        // Collapsible window with a game saving menu.
+        egui::Window::new("Game Saves")
+            .show(ctx, |ui| {
+                let save_file = game.save_file.as_ref().expect("Expected save file.");
+                let save_count = save_file.save_count();
+                for (i, save) in save_file.saves_iter().enumerate() {
+                    ui.label(&save.name);
+                    if i == save_count - 1 {
+                        ui.separator();
+                    }
+                }
+            });
     }
 }

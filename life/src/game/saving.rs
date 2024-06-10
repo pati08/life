@@ -77,6 +77,11 @@ impl SaveFile {
     pub fn save_at(&self, index: usize) -> Option<&SaveGame> {
         self.saves.get(index)
     }
+
+    /// Get the number of stored saves
+    pub fn save_count(&self) -> usize {
+        self.saves.len()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,8 +90,8 @@ pub struct SaveGame {
     living_cells: Vec<Vector2<i32>>,
     grid_size: f32,
     pan_position: Vector2<f64>,
-    created: chrono::DateTime<chrono::Local>,
-    name: String,
+    pub created: chrono::DateTime<chrono::Local>,
+    pub name: String,
 }
 
 impl SaveGame {
