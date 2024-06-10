@@ -144,6 +144,7 @@ impl Gui {
     const PLAYING_TEXT: &'static str = "Playing \u{23F5}";
     const NOT_PLAYING_TEXT: &'static str = "Stopped \u{23F8}";
 
+    /// Render the top panel's UI elements within some `Ui`.
     fn top_panel_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
         ui.horizontal(|ui| {
@@ -180,6 +181,7 @@ impl Gui {
         });
     }
 
+    /// Render the simulation statistics within some `Ui`.
     fn simulation_stats_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
         ui.label(format!("Living Cells: {}", game.get_living_count()));
@@ -216,6 +218,7 @@ impl Gui {
             });
     }
 
+    /// Render the interface for saving and loading within some `Ui`.
     fn saving_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
 
