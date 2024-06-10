@@ -48,7 +48,7 @@ pub struct GameState {
     /// A queue of inputs that were made during computation and therefore
     /// deferred.
     input_queue: VecDeque<QueueAction>,
-    #[cfg(feature = "threading")]
+    #[cfg(feature = "native_threads")]
     /// Synchronization between the main thread and the computing thread
     thread_data: ThreadData,
     living_cell_count: usize,
@@ -341,7 +341,7 @@ impl GameState {
     }
 }
 
-#[cfg(feature = "threading")]
+#[cfg(feature = "native_threads")]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         use StepThreadNotification as STN;
@@ -491,7 +491,7 @@ impl GameState {
     }
 }
 
-#[cfg(not(feature = "threading"))]
+#[cfg(not(any(feature = "native_threads", feature = "gloo_threads")))]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         let save_file = SaveFile::new("./save.json".into()).unwrap();
@@ -558,27 +558,27 @@ impl GameState {
     }
 }
 
-#[cfg(feature = "threading")]
+#[cfg(feature = "native_threads")]
 enum StepThreadNotification {
     Exit,
     Waiting,
     Compute(LivingList),
 }
 
-#[cfg(feature = "threading")]
+#[cfg(feature = "native_threads")]
 struct SharedThreadData {
     notification: Mutex<StepThreadNotification>,
     condvar: Condvar,
     computing: AtomicBool,
 }
 
-#[cfg(feature = "threading")]
+#[cfg(feature = "native_threads")]
 struct ThreadData {
     shared: Arc<SharedThreadData>,
     local: LocalThreadData,
 }
 
-#[cfg(feature = "threading")]
+#[cfg(feature = "native_threads")]
 struct LocalThreadData {
     // The join handle is good to have around, so we'll keep it here even though
     // it's unused.
@@ -735,7 +735,7 @@ fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
 
 impl Drop for GameState {
     fn drop(&mut self) {
-        #[cfg(feature = "threading")]
+        #[cfg(feature = "native_threads")]
         {
             // Terminate the processing thread
             let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
