@@ -18,6 +18,8 @@ use winit::{
 
 use crate::game::saving::SaveFile;
 
+use self::saving::SaveGame;
+
 use super::render::Cell;
 use vec2::Vector2;
 
@@ -45,7 +47,7 @@ pub struct GameState {
     drag_state: DragState,
     /// A queue of inputs that were made during computation and therefore
     /// deferred.
-    input_queue: VecDeque<InputAction>,
+    input_queue: VecDeque<QueueAction>,
     #[cfg(feature = "threading")]
     /// Synchronization between the main thread and the computing thread
     thread_data: ThreadData,
@@ -300,11 +302,14 @@ impl GameState {
     fn resolve_queue(&mut self) {
         while let Some(i) = self.input_queue.pop_front() {
             match i {
-                InputAction::Clear => {
+                QueueAction::Clear => {
                     self.clear_action();
                 }
-                InputAction::Toggle(cell) => {
+                QueueAction::Toggle(cell) => {
                     self.left_action(cell);
+                }
+                QueueAction::Load(save) => {
+                    self.load_action(save);
                 }
             }
         }
@@ -322,6 +327,17 @@ impl GameState {
         let cells = self.get_cells();
         self.toggle_record.push(self.step_count);
         self.changes.cells = Some(cells);
+    }
+
+    fn load_action(&mut self, save: SaveGame) {
+        self.clear_action();
+        self.living_cells = save.living_cells();
+        self.pan_position = save.pan_position();
+        self.grid_size = save.grid_size();
+
+        self.changes.cells = Some(self.get_cells());
+        self.changes.grid_size = Some(self.grid_size);
+        self.changes.offset = Some(self.pan_position);
     }
 }
 
@@ -387,6 +403,19 @@ impl GameState {
         }
     }
 
+    pub fn load_save(&mut self, save: &SaveGame) {
+        if self
+            .thread_data
+            .shared
+            .computing
+            .load(atomic::Ordering::Relaxed)
+        {
+            self.input_queue.push_back(QueueAction::Load(save.clone()));
+        } else {
+            self.load_action(save.clone());
+        }
+    }
+
     pub fn step(&mut self) {
         if self
             .thread_data
@@ -408,7 +437,7 @@ impl GameState {
             .computing
             .load(atomic::Ordering::Relaxed)
         {
-            self.input_queue.push_back(InputAction::Clear);
+            self.input_queue.push_back(QueueAction::Clear);
         } else {
             self.clear_action();
         }
@@ -423,7 +452,7 @@ impl GameState {
             .computing
             .load(atomic::Ordering::Relaxed)
         {
-            self.input_queue.push_back(InputAction::Toggle(cell_pos));
+            self.input_queue.push_back(QueueAction::Toggle(cell_pos));
         } else {
             self.left_action(cell_pos);
         }
@@ -465,6 +494,7 @@ impl GameState {
 #[cfg(not(feature = "threading"))]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
+        let save_file = SaveFile::new("./save.json".into()).unwrap();
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
@@ -480,6 +510,7 @@ impl GameState {
             living_count_history: vec![0],
             toggle_record: Vec::new(),
             changes: StateChanges::default(),
+            save_file: Some(save_file),
         }
     }
 
@@ -494,6 +525,10 @@ impl GameState {
     pub fn clear(&mut self) {
         self.living_cells.clear();
         self.changes.cells = Some(Vec::new());
+    }
+
+    pub fn load_save(&mut self, save: &SaveGame) {
+        self.load_action(save.clone());
     }
 
     fn handle_left(&mut self, mouse_position: Vector2<f64>) {
@@ -523,28 +558,31 @@ impl GameState {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "threading")]
 enum StepThreadNotification {
     Exit,
     Waiting,
     Compute(LivingList),
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "threading")]
 struct SharedThreadData {
     notification: Mutex<StepThreadNotification>,
     condvar: Condvar,
     computing: AtomicBool,
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "threading")]
 struct ThreadData {
     shared: Arc<SharedThreadData>,
     local: LocalThreadData,
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "threading")]
 struct LocalThreadData {
+    // The join handle is good to have around, so we'll keep it here even though
+    // it's unused.
+    #[allow(dead_code)]
     join_handle: JoinHandle<()>,
     rx: mpsc::Receiver<LivingList>,
 }
@@ -619,9 +657,10 @@ enum DragState {
     NotDragging,
 }
 
-enum InputAction {
+enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),
+    Load(SaveGame),
 }
 
 fn to_cell(cell: Vector2<i32>, grid_size: f32) -> Cell {

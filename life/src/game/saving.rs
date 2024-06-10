@@ -1,4 +1,5 @@
 use super::GameState;
+use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::PathBuf};
 use vec2::Vector2;
@@ -69,13 +70,8 @@ impl SaveFile {
     }
 
     /// Get an iterator over the game saves the file contains
-    pub fn saves_iter(&self) -> impl Iterator<Item = &SaveGame> {
-        self.saves.iter()
-    }
-
-    /// Get a reference to the save at a particular index
-    pub fn save_at(&self, index: usize) -> Option<&SaveGame> {
-        self.saves.get(index)
+    pub fn saves_iter(&self) -> impl Iterator<Item = SaveGame> {
+        self.saves.clone().into_iter()
     }
 
     /// Get the number of stored saves
@@ -84,7 +80,7 @@ impl SaveFile {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 /// A record of a game that can be restored.
 pub struct SaveGame {
     living_cells: Vec<Vector2<i32>>,
@@ -103,5 +99,14 @@ impl SaveGame {
             created: chrono::Local::now(),
             name,
         }
+    }
+    pub fn living_cells(&self) -> FxHashSet<Vector2<i32>> {
+        self.living_cells.iter().cloned().collect()
+    }
+    pub fn pan_position(&self) -> Vector2<f64> {
+        self.pan_position
+    }
+    pub fn grid_size(&self) -> f32 {
+        self.grid_size
     }
 }
