@@ -234,9 +234,9 @@ impl<'a> RenderState<'a> {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            #[cfg(not(feature = "web"))]
+            #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
-            #[cfg(feature = "web")]
+            #[cfg(target_arch = "wasm32")]
             backends: wgpu::Backends::GL,
             ..Default::default()
         });
@@ -251,7 +251,7 @@ impl<'a> RenderState<'a> {
             })
             .await
             .unwrap();
-        let limits = if cfg!(feature = "web") {
+        let limits = if cfg!(target_arch = "wasm32") {
             wgpu::Limits {
                 max_bind_groups: 5,
                 max_storage_textures_per_shader_stage: 0,

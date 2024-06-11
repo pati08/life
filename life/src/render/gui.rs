@@ -1,8 +1,15 @@
-use egui::{Color32, Context, Id, RichText, Slider, TextEdit, TexturesDelta, Ui};
+use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta, Ui};
+
+#[cfg(feature = "saving")]
+use egui::TextEdit;
+#[cfg(feature = "saving")]
 use std::ops::DerefMut;
+
 use std::sync::{Arc, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use ::egui::FontDefinitions;
 use egui_plot::{Line, Plot, VLine};
@@ -14,15 +21,16 @@ use winit::{
     event::{ElementState, Event},
 };
 
-use crate::game::saving::SaveGame;
 use crate::game::GameState;
+
+#[cfg(feature = "saving")]
+use crate::game::saving::SaveGame;
 
 pub struct GuiState {
     platform: Platform,
     render_pass: RenderPass,
     app: Gui,
     device: Arc<Device>,
-    #[cfg(not(target_arch = "wasm32"))]
     start_time: Instant,
     window: Arc<winit::window::Window>,
 }
@@ -67,13 +75,16 @@ impl GuiState {
             style: Default::default(),
         });
         let render_pass = RenderPass::new(&device, surface_format, 1);
-        let app = Gui { game_state, new_save_name: String::new() };
+        let app = Gui {
+            game_state,
+            #[cfg(feature = "saving")]
+            new_save_name: String::new(),
+        };
         Self {
             platform,
             render_pass,
             app,
             device,
-            #[cfg(not(target_arch = "wasm32"))]
             start_time: Instant::now(),
             window,
         }
@@ -86,7 +97,6 @@ impl GuiState {
         view: &wgpu::TextureView,
         mut encoder: wgpu::CommandEncoder,
     ) -> (wgpu::CommandEncoder, TexturesDelta) {
-        #[cfg(not(target_arch = "wasm32"))]
         self.platform
             .update_time(self.start_time.elapsed().as_secs_f64());
 
@@ -141,6 +151,7 @@ impl GuiState {
 /// it needs to render to an `Egui::Context`. 
 struct Gui {
     game_state: Arc<Mutex<GameState>>,
+    #[cfg(feature = "saving")]
     new_save_name: String,
 }
 
@@ -160,6 +171,8 @@ impl Gui {
                 );
             if reset_button.clicked() {
                 game.clear();
+                game.living_count_history = vec![0];
+                game.toggle_record.clear();
             }
             let button_text = if game.is_playing() {
                 Self::PLAYING_TEXT
@@ -170,11 +183,14 @@ impl Gui {
             if play_button.clicked() {
                 game.toggle_playing();
             }
+            // This is needed for two reasons:
+            // - We need to lie to the GUI slider for it to feel natural
+            // - We can only set and get the interval through methods
             let speed_get_set = |set: Option<f64>| {
                 if let Some(v) = set {
-                    game.set_interval(std::time::Duration::from_secs_f64(v));
+                    game.set_interval(std::time::Duration::from_secs_f64(v.powi(2)));
                 }
-                game.get_interval().as_secs_f64()
+                game.get_interval().as_secs_f64().sqrt()
             };
             ui.label("Speed: ");
             let speed_slider =
@@ -223,7 +239,7 @@ impl Gui {
     }
 
     /// Render the interface for saving and loading within some `Ui`.
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     fn saving_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
 
@@ -271,7 +287,7 @@ impl Gui {
             .expect("Expected open window");
 
         // Collapsible window with a game saving menu.
-        #[cfg(not(feature = "web"))]
+        #[cfg(feature = "saving")]
         egui::Window::new("Game Saves")
             .show(ctx, |ui| {
                 self.saving_ui(ui);

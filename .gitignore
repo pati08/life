@@ -2,3 +2,5 @@
 .direnv
 result
 result-bin
+rust-analyzer.json
+pkg

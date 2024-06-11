@@ -1,28 +1,40 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     collections::VecDeque,
-    sync::{
-        self,
-        atomic::{self, AtomicBool},
-        mpsc, Arc, Condvar, Mutex,
-    },
-    thread::JoinHandle,
     time::Duration,
+    sync::Arc
 };
+
+#[cfg(feature = "native_threads")]
+use std::thread::JoinHandle;
+
+#[cfg(feature = "native_threads")]
+use std::sync::{
+    self,
+    atomic::{self, AtomicBool},
+    mpsc, Condvar, Mutex
+};
+
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr},
     window::Window,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
+#[cfg(feature = "saving")]
 use crate::game::saving::SaveFile;
-
+#[cfg(feature = "saving")]
 use self::saving::SaveGame;
 
 use super::render::Cell;
 use vec2::Vector2;
 
+#[cfg(feature = "saving")]
 pub mod saving;
 
 /// The interval between simulation steps in auto-play mode.
@@ -70,7 +82,7 @@ pub struct GameState {
 
     /// Saving data that is kept in memory during play and saved to disk when
     /// the game is closed.
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     pub save_file: Option<saving::SaveFile>,
 }
 
@@ -98,7 +110,7 @@ impl GameState {
             self.loop_state = LoopState::Stopped;
         } else {
             self.step();
-            let now = std::time::Instant::now();
+            let now = Instant::now();
             self.loop_state = LoopState::Playing { last_update: now }
         }
     }
@@ -114,16 +126,22 @@ impl GameState {
     }
 
     fn handle_scroll(&mut self, delta: MouseScrollDelta) {
+        #[cfg(not(target_arch = "wasm32"))]
+        const PIXEL_MUL: f64 = 3.0;
+
+        #[cfg(target_arch = "wasm32")]
+        const PIXEL_MUL: f64 = 0.2;
+
         let prev_size = self.grid_size;
         let size = self.window.inner_size();
-        let change = size.height as f32
-            * 0.00005
+        let change = size.height as f64
+            * 0.000005
             * match delta {
-                MouseScrollDelta::LineDelta(_, n) => n,
-                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => (y * 0.2) as f32,
+                MouseScrollDelta::LineDelta(_, n) => n as f64,
+                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => y * PIXEL_MUL
             };
 
-        self.grid_size = (self.grid_size * (1.0 + change)).clamp(0.005, 1.0);
+        self.grid_size = (self.grid_size as f64 * (1.0 + change)).clamp(0.005, 1.0) as f32;
         self.changes.grid_size = Some(self.grid_size);
 
         let center = if let Some(v) = self.mouse_position {
@@ -309,7 +327,7 @@ impl GameState {
                 QueueAction::Toggle(cell) => {
                     self.left_action(cell);
                 }
-                #[cfg(not(feature = "web"))]
+                #[cfg(feature = "saving")]
                 QueueAction::Load(save) => {
                     self.load_action(save);
                 }
@@ -331,7 +349,7 @@ impl GameState {
         self.changes.cells = Some(cells);
     }
 
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     fn load_action(&mut self, save: SaveGame) {
         self.clear_action();
         self.living_cells = save.living_cells();
@@ -384,7 +402,7 @@ impl GameState {
             shared: shared_thread_data,
         };
 
-        #[cfg(not(feature = "web"))]
+        #[cfg(feature = "saving")]
         let save_file = SaveFile::new("./save.json".into()).unwrap();
 
         Self {
@@ -403,12 +421,14 @@ impl GameState {
             living_count_history: vec![0],
             changes: StateChanges::default(),
             toggle_record: Vec::new(),
-            #[cfg(not(feature = "web"))]
+            #[cfg(feature = "saving")]
             save_file: Some(save_file),
+            #[cfg(target_arch = "wasm32")]
+            scroll_mode: Default::default(),
         }
     }
 
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     pub fn load_save(&mut self, save: &SaveGame) {
         if self
             .thread_data
@@ -501,7 +521,8 @@ impl GameState {
 #[cfg(not(feature = "native_threads"))]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        #[cfg(not(feature = "web"))]
+        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "saving")]
         let save_file = SaveFile::new("./save.json".into()).unwrap();
         Self {
             pan_position: [0.0, 0.0].into(),
@@ -518,7 +539,7 @@ impl GameState {
             living_count_history: vec![0],
             toggle_record: Vec::new(),
             changes: StateChanges::default(),
-            #[cfg(not(feature = "web"))]
+            #[cfg(feature = "saving")]
             save_file: Some(save_file),
         }
     }
@@ -536,7 +557,7 @@ impl GameState {
         self.changes.cells = Some(Vec::new());
     }
 
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     pub fn load_save(&mut self, save: &SaveGame) {
         self.load_action(save.clone());
     }
@@ -619,7 +640,7 @@ impl std::ops::AddAssign<StateChanges> for StateChanges {
 }
 
 pub enum LoopState {
-    Playing { last_update: std::time::Instant },
+    Playing { last_update: Instant },
     Stopped,
 }
 
@@ -643,7 +664,7 @@ impl LoopState {
         if let Self::Playing { last_update } = self {
             if last_update.elapsed() >= *interval {
                 *self = Self::Playing {
-                    last_update: std::time::Instant::now(),
+                    last_update: Instant::now(),
                 };
                 true
             } else {
@@ -667,10 +688,11 @@ enum DragState {
     NotDragging,
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),
-    #[cfg(not(feature = "web"))]
+    #[cfg(feature = "saving")]
     Load(SaveGame),
 }
 
@@ -754,7 +776,7 @@ impl Drop for GameState {
         }
 
         // Write the save file to the disk
-        #[cfg(not(feature = "web"))]
+        #[cfg(feature = "saving")]
         if let Err(e) = std::mem::take(&mut self.save_file).unwrap().write_to_disk() {
             log::error!("Failed to write saves with error:\n{}", e);
         };
