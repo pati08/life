@@ -1,12 +1,29 @@
 // For aspect ratio and stuff
+struct Offset {
+    data: vec2<f32>,
+    padding: vec2<f32>,
+}
+
 @group(0) @binding(0)
-var<uniform> offset: vec2<f32>;
+var<uniform> offset: Offset;
+
+struct Size {
+    data: f32,
+    padding: f32,
+    padding2: vec2<f32>,
+}
 
 @group(1) @binding(0)
-var<uniform> grid_size: f32;
+var<uniform> grid_size: Size;
 
+struct Res {
+    data: vec2<f32>,
+    padding: vec2<f32>,
+}
+
+// For aspect ratio and stuff
 @group(3) @binding(0)
-var<uniform> res: vec2<f32>;
+var<uniform> res: Res;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -37,6 +54,9 @@ var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let offset = offset.data;
+    let grid_size = grid_size.data;
+    let res = res.data;
     let o = offset;
     let x = in.tex_coords.x;
     let y = in.tex_coords.y;

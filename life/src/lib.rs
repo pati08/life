@@ -3,12 +3,18 @@
 #![feature(if_let_guard)]
 #![warn(clippy::todo)]
 
+use egui_wgpu_backend::ScreenDescriptor;
+use web_sys::HtmlCanvasElement;
 use winit::{
     event::*,
     event_loop::EventLoop,
     keyboard::{Key, NamedKey},
     window::{Window, WindowBuilder},
+    platform::web::WindowBuilderExtWebSys,
 };
+
+#[cfg(feature = "web")]
+use wasm_bindgen::prelude::*;
 
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +39,27 @@ impl<'a> State<'a> {
     pub async fn new() -> (Self, EventLoop<()>) {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
+        #[cfg(feature = "web")]
         let window = Arc::new(window);
+
+        #[cfg(feature = "web")]
+        {
+            use winit::dpi::PhysicalSize;
+
+            use winit::platform::web::WindowExtWebSys;
+            web_sys::window()
+                .and_then(|win| win.document().map(|d| (d, win.screen().unwrap())))
+                .and_then(|(doc, screen)| {
+                    let width = screen.width().expect("width");
+                    let height = screen.width().expect("width");
+                    let _ = window.request_inner_size(PhysicalSize::new(width, height));
+                    let dst = doc.get_element_by_id("game")?;
+                    let canvas = web_sys::Element::from(window.canvas()?);
+                    dst.append_child(&canvas).ok()?;
+                    Some(())
+                })
+                .expect("Couldn't append canvas to document body.");
+        }
 
         let game_state = Arc::new(Mutex::new(GameState::new(
             window.clone(),
@@ -60,7 +86,11 @@ impl<'a> State<'a> {
 }
 
 /// Run the game
+#[cfg_attr(feature = "web", wasm_bindgen)]
 pub async fn run() {
+    #[cfg(feature = "web")]
+    console_error_panic_hook::set_once();
+
     let (mut state, event_loop) = State::new().await;
 
     let mut surface_configured = false;

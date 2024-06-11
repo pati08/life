@@ -1,6 +1,7 @@
 use egui::{Color32, Context, Id, RichText, Slider, TextEdit, TexturesDelta, Ui};
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use ::egui::FontDefinitions;
@@ -21,6 +22,7 @@ pub struct GuiState {
     render_pass: RenderPass,
     app: Gui,
     device: Arc<Device>,
+    #[cfg(not(target_arch = "wasm32"))]
     start_time: Instant,
     window: Arc<winit::window::Window>,
 }
@@ -71,6 +73,7 @@ impl GuiState {
             render_pass,
             app,
             device,
+            #[cfg(not(target_arch = "wasm32"))]
             start_time: Instant::now(),
             window,
         }
@@ -83,6 +86,7 @@ impl GuiState {
         view: &wgpu::TextureView,
         mut encoder: wgpu::CommandEncoder,
     ) -> (wgpu::CommandEncoder, TexturesDelta) {
+        #[cfg(not(target_arch = "wasm32"))]
         self.platform
             .update_time(self.start_time.elapsed().as_secs_f64());
 
@@ -219,6 +223,7 @@ impl Gui {
     }
 
     /// Render the interface for saving and loading within some `Ui`.
+    #[cfg(not(feature = "web"))]
     fn saving_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
 
@@ -266,6 +271,7 @@ impl Gui {
             .expect("Expected open window");
 
         // Collapsible window with a game saving menu.
+        #[cfg(not(feature = "web"))]
         egui::Window::new("Game Saves")
             .show(ctx, |ui| {
                 self.saving_ui(ui);

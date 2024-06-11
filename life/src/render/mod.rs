@@ -234,7 +234,10 @@ impl<'a> RenderState<'a> {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            #[cfg(not(feature = "web"))]
             backends: wgpu::Backends::PRIMARY,
+            #[cfg(feature = "web")]
+            backends: wgpu::Backends::GL,
             ..Default::default()
         });
 
@@ -248,15 +251,33 @@ impl<'a> RenderState<'a> {
             })
             .await
             .unwrap();
+        let limits = if cfg!(feature = "web") {
+            wgpu::Limits {
+                max_bind_groups: 5,
+                max_storage_textures_per_shader_stage: 0,
+                max_storage_buffers_per_shader_stage: 0,
+                max_storage_buffer_binding_size: 0,
+                max_dynamic_storage_buffers_per_pipeline_layout: 0,
+                max_compute_invocations_per_workgroup: 0,
+                max_compute_workgroup_storage_size: 0,
+                max_compute_workgroup_size_x: 0,
+                max_compute_workgroups_per_dimension: 0,
+                max_compute_workgroup_size_y: 0,
+                max_compute_workgroup_size_z: 0,
+                ..Default::default()
+            }
+        } else {
+            wgpu::Limits {
+                max_bind_groups: 5,
+                ..Default::default()
+            }
+        };
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits {
-                        max_bind_groups: 5,
-                        ..Default::default()
-                    },
+                    required_limits: limits,
                 },
                 None, // Trace path
             )
@@ -287,7 +308,7 @@ impl<'a> RenderState<'a> {
         // Create a buffer and bind group for the resolution of the window
         let res_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Resolution Buffer"),
-            contents: bytemuck::cast_slice(&[size.width as f32, size.height as f32]),
+            contents: bytemuck::cast_slice(&[size.width as f32, size.height as f32, 0.0, 0.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -318,7 +339,7 @@ impl<'a> RenderState<'a> {
         // Create a buffer and bind group for the grid size
         let grid_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Radius Buffer"),
-            contents: bytemuck::cast_slice(&[grid_size]),
+            contents: bytemuck::cast_slice(&[grid_size, 0.0, 0.0, 0.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let grid_size_bind_group_layout =
@@ -456,7 +477,7 @@ impl<'a> RenderState<'a> {
 
         let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Offset Buffer"),
-            contents: bytemuck::cast_slice(&[0.0, 0.0]),
+            contents: bytemuck::cast_slice(&[0.0, 0.0, 0.0, 0.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let offset_bind_group_layout =
@@ -721,9 +742,12 @@ impl<'a> RenderState<'a> {
     /// Update the panning value used in the shader.
     pub fn update_offset(&mut self, new_offset: vec2::Vector2<f32>) {
         let offset: [f32; 2] = new_offset.into();
+        let mut data = Vec::with_capacity(4);
+        data.extend(offset);
+        data.extend([0.0, 0.0]);
         self.core
             .queue
-            .write_buffer(&self.rsc.offset_buffer, 0, bytemuck::cast_slice(&offset));
+            .write_buffer(&self.rsc.offset_buffer, 0, bytemuck::cast_slice(&data[..]));
     }
 
     /// Change the grid size used for rendering.
@@ -738,7 +762,7 @@ impl<'a> RenderState<'a> {
 
         self.core
             .queue
-            .write_buffer(&self.rsc.radius_buffer, 0, bytemuck::cast_slice(&[new]));
+            .write_buffer(&self.rsc.radius_buffer, 0, bytemuck::cast_slice(&[new, 0.0, 0.0, 0.0]));
     }
 
     /// Reconfigure and update the renderer for a new resolution
@@ -756,7 +780,7 @@ impl<'a> RenderState<'a> {
         self.core.queue.write_buffer(
             &self.rsc.res_buffer,
             0 as wgpu::BufferAddress,
-            bytemuck::cast_slice(&[new_size.width as f32, new_size.height as f32]),
+            bytemuck::cast_slice(&[new_size.width as f32, new_size.height as f32, 0.0, 0.0]),
         );
     }
 

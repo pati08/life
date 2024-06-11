@@ -24,6 +24,9 @@ in
       vulkan-extension-layer
       vulkan-validation-layers # don't need them *strictly* but immensely helpful
       cmake
+
+      wasm-pack
+      nodejs
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables

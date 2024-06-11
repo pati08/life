@@ -70,6 +70,7 @@ pub struct GameState {
 
     /// Saving data that is kept in memory during play and saved to disk when
     /// the game is closed.
+    #[cfg(not(feature = "web"))]
     pub save_file: Option<saving::SaveFile>,
 }
 
@@ -308,6 +309,7 @@ impl GameState {
                 QueueAction::Toggle(cell) => {
                     self.left_action(cell);
                 }
+                #[cfg(not(feature = "web"))]
                 QueueAction::Load(save) => {
                     self.load_action(save);
                 }
@@ -329,6 +331,7 @@ impl GameState {
         self.changes.cells = Some(cells);
     }
 
+    #[cfg(not(feature = "web"))]
     fn load_action(&mut self, save: SaveGame) {
         self.clear_action();
         self.living_cells = save.living_cells();
@@ -381,6 +384,7 @@ impl GameState {
             shared: shared_thread_data,
         };
 
+        #[cfg(not(feature = "web"))]
         let save_file = SaveFile::new("./save.json".into()).unwrap();
 
         Self {
@@ -399,10 +403,12 @@ impl GameState {
             living_count_history: vec![0],
             changes: StateChanges::default(),
             toggle_record: Vec::new(),
+            #[cfg(not(feature = "web"))]
             save_file: Some(save_file),
         }
     }
 
+    #[cfg(not(feature = "web"))]
     pub fn load_save(&mut self, save: &SaveGame) {
         if self
             .thread_data
@@ -491,9 +497,11 @@ impl GameState {
     }
 }
 
-#[cfg(not(any(feature = "native_threads", feature = "gloo_threads")))]
+// #[cfg(not(any(feature = "native_threads", feature = "gloo_threads")))] // FIXME
+#[cfg(not(feature = "native_threads"))]
 impl GameState {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
+        #[cfg(not(feature = "web"))]
         let save_file = SaveFile::new("./save.json".into()).unwrap();
         Self {
             pan_position: [0.0, 0.0].into(),
@@ -510,6 +518,7 @@ impl GameState {
             living_count_history: vec![0],
             toggle_record: Vec::new(),
             changes: StateChanges::default(),
+            #[cfg(not(feature = "web"))]
             save_file: Some(save_file),
         }
     }
@@ -527,6 +536,7 @@ impl GameState {
         self.changes.cells = Some(Vec::new());
     }
 
+    #[cfg(not(feature = "web"))]
     pub fn load_save(&mut self, save: &SaveGame) {
         self.load_action(save.clone());
     }
@@ -660,6 +670,7 @@ enum DragState {
 enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),
+    #[cfg(not(feature = "web"))]
     Load(SaveGame),
 }
 
@@ -743,6 +754,7 @@ impl Drop for GameState {
         }
 
         // Write the save file to the disk
+        #[cfg(not(feature = "web"))]
         if let Err(e) = std::mem::take(&mut self.save_file).unwrap().write_to_disk() {
             log::error!("Failed to write saves with error:\n{}", e);
         };
