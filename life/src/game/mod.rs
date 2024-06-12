@@ -566,14 +566,7 @@ impl GameState {
         let size = self.window.inner_size();
         let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
 
-        if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
-            self.living_cells.remove(&i);
-        } else {
-            self.living_cells.insert(cell_pos);
-        }
-
-        let cells = self.get_cells();
-        self.changes.cells = Some(cells)
+        self.left_action(cell_pos);
     }
 
     pub fn update(&mut self) -> StateChanges {

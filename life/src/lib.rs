@@ -140,6 +140,7 @@ pub async fn run() {
                         ..
                     } = event
                     {
+                        #[cfg(not(target_arch = "wasm32"))]
                         control_flow.exit();
                     }
                 }
