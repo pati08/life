@@ -2,5 +2,6 @@
 members = [
     "life",
     "vec2",
+    "server",
 ]
 resolver = "2"
