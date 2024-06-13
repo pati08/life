@@ -4,6 +4,28 @@ use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::PathBuf};
 use vec2::Vector2;
 
+trait DataStorage: Sized {
+    type Data: serde::Serialize + for<'a> serde::Deserialize<'a> + Default;
+    type Error: Into<anyhow::Error>;
+
+    fn new(identifier: &str) -> Result<(Self, Self::Data), Self::Error>;
+    fn get(&self) -> &Self::Data;
+    fn set(&mut self, data: Self::Data);
+    fn finish(self) -> Result<(), Self::Error>;
+}
+
+impl<T: DataStorage> Drop for T {
+    fn drop(mut self) {
+        self.finish();
+    }
+}
+
+#[cfg(feature = "native")]
+mod native;
+
+#[cfg(target_arch = "wasm32")]
+mod web;
+
 /// A representation of a game save file. The saves are stored in memory unless
 /// written to disk via `SaveFile::write_to_disk`.
 pub struct SaveFile {
