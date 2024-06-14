@@ -2,6 +2,7 @@ use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta, Ui};
 
 #[cfg(feature = "saving")]
 use egui::TextEdit;
+use egui_commonmark::CommonMarkCache;
 #[cfg(feature = "saving")]
 use std::ops::DerefMut;
 
@@ -75,11 +76,7 @@ impl GuiState {
             style: Default::default(),
         });
         let render_pass = RenderPass::new(&device, surface_format, 1);
-        let app = Gui {
-            game_state,
-            #[cfg(feature = "saving")]
-            new_save_name: String::new(),
-        };
+        let app = game_state.into();
         Self {
             platform,
             render_pass,
@@ -147,12 +144,26 @@ impl GuiState {
     }
 }
 
+impl From<Arc<Mutex<GameState>>> for Gui {
+    fn from(from: Arc<Mutex<GameState>>) -> Self {
+        Self {
+            game_state: from,
+            #[cfg(feature = "saving")]
+            new_save_name: String::new(),
+            intro_text_open: true,
+            commonmark_cache: CommonMarkCache::default(),
+        }
+    }
+}
+
 /// The graphical user interface's persisted state, which contains everything
 /// it needs to render to an `Egui::Context`. 
 struct Gui {
     game_state: Arc<Mutex<GameState>>,
     #[cfg(feature = "saving")]
     new_save_name: String,
+    intro_text_open: bool,
+    commonmark_cache: CommonMarkCache,
 }
 
 impl Gui {
@@ -274,6 +285,8 @@ impl Gui {
 
     /// Render the interface to an `Egui::Context`.
     fn ui(&mut self, ctx: &Context) {
+        use egui_commonmark::commonmark_str;
+
         // Top panel with some controls
         egui::containers::panel::TopBottomPanel::top(Id::new("top_panel"))
             .show(ctx, |ui| {
@@ -291,6 +304,15 @@ impl Gui {
         egui::Window::new("Game Saves")
             .show(ctx, |ui| {
                 self.saving_ui(ui);
+            });
+
+        egui::Window::new("Introduction").open(&mut self.intro_text_open)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .collapsible(false)
+            .show(ctx, |ui| {
+                let cache = &mut self.commonmark_cache;
+                commonmark_str!("intro_text", ui, cache, "life/src/render/intro.md");
             });
     }
 }
