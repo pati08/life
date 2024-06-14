@@ -58,5 +58,5 @@ in
         ''-I${pkgs.glib.out}/lib/glib-2.0/include/''
       ];
 
-    CARGO_HOME = "/home/patrick/Coding/rust/cargo";
+    # CARGO_HOME = "/home/patrick/Coding/rust/cargo";
   }
