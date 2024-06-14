@@ -1,16 +1,16 @@
 use super::DataStorage;
 use web_sys::Storage;
 
-struct WebStorage<T>
+pub struct WebStorage<'a, T>
 where
-    T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default
+    T: serde::Serialize + for<'b> serde::Deserialize<'b> + Default
 {
     storage: Storage,
     data: T,
-    key: &str,
+    key: &'a str,
 }
 
-impl<T> DataStorage for WebStorage<T>
+impl<T> DataStorage for WebStorage<'_, T>
 where
     T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default + Clone
 {
@@ -37,8 +37,9 @@ where
     fn set(&mut self, data: T) {
         self.data = data;
     }
-    fn finish(mut self) -> Result<(), anyhow::Error> {
-        self.file.write(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
+    fn finish(&mut self) -> Result<(), anyhow::Error> {
+        let json_str = serde_json::to_string_pretty(&self.data)?;
+        self.storage.set_item(self.key, json_str)?;
         Ok(())
     }
 }

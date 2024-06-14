@@ -11,20 +11,29 @@ trait DataStorage: Sized {
     fn new(identifier: &str) -> Result<(Self, Self::Data), Self::Error>;
     fn get(&self) -> &Self::Data;
     fn set(&mut self, data: Self::Data);
-    fn finish(self) -> Result<(), Self::Error>;
+    fn finish(&mut self) -> Result<(), Self::Error>;
 }
 
-impl<T: DataStorage> Drop for T {
-    fn drop(mut self) {
-        self.finish();
-    }
-}
+// cfg_if! {
+//     if #[cfg(feature = "native")] {
+//         mod native;
+//         use native::NativeFs as DefaultStorage;
+//     }
+//     if #[cfg(target_arch = "wasm32")] {
+//         mod web;
+//         use web::WebStorage as DefaultStorage;
+//     }
+// }
 
 #[cfg(feature = "native")]
 mod native;
+#[cfg(feature = "native")]
+use native::NativeFs as DefaultStorage;
 
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(target_arch = "wasm32")]
+use web::WebStorage as DefaultStorage;
 
 /// A representation of a game save file. The saves are stored in memory unless
 /// written to disk via `SaveFile::write_to_disk`.
