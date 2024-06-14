@@ -17,3 +17,12 @@ build-web-release:
     mkdir dist
     cp target/release/server dist
     cp -r www/dist dist/assets
+
+# The same as build-web-release, but without building the server
+pages-ci:
+    rm -rf dist
+    rm -rf www/dist
+    wasm-pack build life --release
+    cd www && npm install && npm run build
+    mkdir dist
+    cp -r www/dist dist/assets

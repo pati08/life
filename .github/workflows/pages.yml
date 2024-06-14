@@ -41,7 +41,7 @@ jobs:
         with:
           flakes-from-devshell: true
           script: |
-            just build-web-release
+            just pages-ci
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
