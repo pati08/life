@@ -5,3 +5,5 @@ result-bin
 rust-analyzer.json
 pkg
 dist
+cargo-cache
+.envrc

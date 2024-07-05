@@ -1,9 +1,13 @@
 use super::{DataStorage, SaveGame};
-use std::{fs::File, io::{Read, Write}, path::PathBuf};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 
-struct NativeFs<T>
+pub struct NativeFs<T>
 where
-    T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default
+    T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default,
 {
     file: File,
     data: T,
@@ -11,7 +15,7 @@ where
 
 impl<T> DataStorage for NativeFs<T>
 where
-    T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default + Clone
+    T: serde::Serialize + for<'a> serde::Deserialize<'a> + Default + Clone,
 {
     type Data = T;
     type Error = anyhow::Error;
@@ -27,12 +31,15 @@ where
             .unwrap_or((T::default(), serde_json::to_string_pretty(&T::default())?));
 
         let mut file = File::create(&filename)?;
-        file.write(existing_data.1.as_bytes())?;
+        file.write_all(existing_data.1.as_bytes())?;
 
-        Ok((NativeFs {
-            file,
-            data: existing_data.0.clone(),
-        }, existing_data.0))
+        Ok((
+            NativeFs {
+                file,
+                data: existing_data.0.clone(),
+            },
+            existing_data.0,
+        ))
     }
     fn get(&self) -> &T {
         &self.data
@@ -40,8 +47,9 @@ where
     fn set(&mut self, data: T) {
         self.data = data;
     }
-    fn finish(mut self) -> Result<(), anyhow::Error> {
-        self.file.write(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
+    fn finish(&mut self) -> Result<(), anyhow::Error> {
+        self.file
+            .write(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
         Ok(())
     }
 }

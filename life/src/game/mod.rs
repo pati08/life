@@ -1,9 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{
-    collections::VecDeque,
-    time::Duration,
-    sync::Arc
-};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 #[cfg(feature = "native_threads")]
 use std::thread::JoinHandle;
@@ -12,24 +8,24 @@ use std::thread::JoinHandle;
 use std::sync::{
     self,
     atomic::{self, AtomicBool},
-    mpsc, Condvar, Mutex
+    mpsc, Condvar, Mutex,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr},
     window::Window,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 
 #[cfg(feature = "saving")]
-use crate::game::saving::SaveFile;
-#[cfg(feature = "saving")]
 use self::saving::SaveGame;
+#[cfg(feature = "saving")]
+use crate::game::saving::SaveFile;
 
 use super::render::Cell;
 use vec2::Vector2;
@@ -138,7 +134,7 @@ impl GameState {
             * 0.000005
             * match delta {
                 MouseScrollDelta::LineDelta(_, n) => n as f64,
-                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => y * PIXEL_MUL
+                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => y * PIXEL_MUL,
             };
 
         self.grid_size = (self.grid_size as f64 * (1.0 + change)).clamp(0.005, 1.0) as f32;
