@@ -30,6 +30,9 @@ in
 
       # command automation
       just
+
+      # for the crate graph
+      graphviz
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables
