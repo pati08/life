@@ -3,6 +3,11 @@
 #![feature(if_let_guard)]
 #![warn(clippy::todo)]
 #![warn(clippy::pedantic)]
+// When I cast like this, I always keep in mind the precision or truncation
+// issues anyway
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_sign_loss)]
 
 use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
@@ -17,15 +22,14 @@ use wasm_bindgen::prelude::*;
 use std::sync::{Arc, Mutex};
 
 mod render;
-use render::RenderState;
 
 mod game;
 
 struct State<'a> {
     #[allow(dead_code)]
     window: Arc<Window>,
-    render_state: RenderState<'a>,
-    game_state: Arc<Mutex<game::State>>,
+    render: render::State<'a>,
+    game: Arc<Mutex<game::State>>,
 }
 
 /// The number of cells that will fit across the height of the window by default
@@ -58,7 +62,7 @@ impl<'a> State<'a> {
             DEFAULT_GRID_SIZE.recip(),
         )));
 
-        let render_state = RenderState::new(
+        let render_state = render::State::new(
             window.clone(),
             DEFAULT_GRID_SIZE.recip(),
             DEFAULT_GRID_SIZE.powi(2) as u64,
@@ -69,8 +73,8 @@ impl<'a> State<'a> {
         (
             Self {
                 window,
-                render_state,
-                game_state,
+                render: render_state,
+                game: game_state,
             },
             event_loop,
         )
@@ -78,6 +82,10 @@ impl<'a> State<'a> {
 }
 
 /// Run the game
+///
+/// # Panics
+/// This function panics only when encountering states that cannot be recovered
+/// from, such as a poisoned mutex on the game state.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub async fn run() {
     #[cfg(target_arch = "wasm32")]
@@ -97,21 +105,21 @@ pub async fn run() {
         .run(move |event, control_flow| {
             // Update the game state. TODO: move this logic into rendering
             {
-                let mut game = state.game_state.lock().unwrap();
+                let mut game = state.game.lock().unwrap();
                 let game_changes = game.update();
                 if let Some(c) = game_changes.cells {
-                    state.render_state.update_cells(c);
+                    state.render.update_cells(c);
                 }
                 if let Some(v) = game_changes.grid_size {
-                    state.render_state.change_grid_size(v);
+                    state.render.change_grid_size(v);
                 }
                 if let Some(v) = game_changes.offset {
                     let offset = vec2::Vector2::new(v.x as f32, v.y as f32);
-                    state.render_state.update_offset(offset);
+                    state.render.update_offset(offset);
                 }
             }
 
-            let egui_captured = state.render_state.handle_event(&event);
+            let egui_captured = state.render.handle_event(&event);
 
             // Pass memory warnings to the log output
             if let Event::MemoryWarning = event {
@@ -122,12 +130,12 @@ pub async fn run() {
                 window_id,
                 ref event,
             } = event
-                && window_id == state.render_state.window().id()
+                && window_id == state.render.window().id()
             {
                 // If the gui didn't capture the event, then hand it to the game
                 // or, if it was the escape key, exit
                 if !egui_captured {
-                    let mut game = state.game_state.lock().unwrap();
+                    let mut game = state.game.lock().unwrap();
                     game.handle_window_event(event);
 
                     if let WindowEvent::KeyboardInput {
@@ -149,25 +157,24 @@ pub async fn run() {
                     WindowEvent::CloseRequested => control_flow.exit(),
                     WindowEvent::Resized(physical_size) => {
                         surface_configured = true;
-                        state.render_state.resize(*physical_size);
+                        state.render.resize(*physical_size);
                     }
                     WindowEvent::RedrawRequested => {
                         // This tells winit that we want another frame after this one
-                        state.render_state.window().request_redraw();
+                        state.render.window().request_redraw();
 
                         // We can't draw if the surface is not properly configured
                         if !surface_configured {
                             return;
                         }
 
-                        state.render_state.update();
-                        match state.render_state.render() {
+                        match state.render.render() {
                             Ok(()) => {}
                             // Reconfigure the surface if it's lost or outdated
                             Err(
                                 wgpu::SurfaceError::Lost
                                 | wgpu::SurfaceError::Outdated,
-                            ) => state.render_state.reconfigure(),
+                            ) => state.render.reconfigure(),
                             // The system is out of memory, we should probably quit
                             Err(wgpu::SurfaceError::OutOfMemory) => {
                                 log::error!("OutOfMemory");

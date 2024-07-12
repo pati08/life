@@ -3,8 +3,6 @@ use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta, Ui};
 #[cfg(feature = "saving")]
 use egui::TextEdit;
 use egui_commonmark::CommonMarkCache;
-#[cfg(feature = "saving")]
-use std::ops::DerefMut;
 
 use std::sync::{Arc, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
@@ -25,7 +23,7 @@ use winit::{
 #[cfg(feature = "saving")]
 use crate::game::saving::SaveGame;
 
-pub struct GuiState {
+pub struct State {
     platform: Platform,
     render_pass: RenderPass,
     app: Gui,
@@ -34,7 +32,7 @@ pub struct GuiState {
     window: Arc<winit::window::Window>,
 }
 
-impl GuiState {
+impl State {
     /// Handle a winit event. Returns `true` if the event is captured by the gui.
     pub fn handle_event<T>(&mut self, event: &Event<T>) -> bool {
         let is_keyup = matches!(
@@ -51,11 +49,10 @@ impl GuiState {
             }
         );
         let captures = self.platform.captures_event(event);
-        if !is_keyup {
-            self.platform.handle_event(event);
-        } else {
+        if is_keyup {
             return false;
         }
+        self.platform.handle_event(event);
         captures
     }
 
@@ -65,13 +62,13 @@ impl GuiState {
         device: Arc<wgpu::Device>,
         surface_format: wgpu::TextureFormat,
         game_state: Arc<Mutex<crate::game::State>>,
-    ) -> GuiState {
+    ) -> State {
         let platform = Platform::new(PlatformDescriptor {
             physical_width: size.width,
             physical_height: size.height,
             scale_factor: window.scale_factor(),
             font_definitions: FontDefinitions::default(),
-            style: Default::default(),
+            style: egui::Style::default(),
         });
         let render_pass = RenderPass::new(&device, surface_format, 1);
         let app = game_state.into();
@@ -280,10 +277,8 @@ impl Gui {
             .hint_text("Save Name")
             .show(ui);
         if ui.button("Save").clicked() && !self.new_save_name.is_empty() {
-            let new_save = SaveGame::new(
-                &mut *game,
-                std::mem::take(&mut self.new_save_name),
-            );
+            let new_save =
+                SaveGame::new(&game, std::mem::take(&mut self.new_save_name));
             game.save_file.as_mut().unwrap().add_save(new_save);
         }
     }

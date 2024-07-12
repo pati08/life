@@ -143,13 +143,14 @@ impl State {
                 }) => y * PIXEL_MUL,
             };
 
-        self.grid_size =
-            (f64::from(self.grid_size) * (1.0 + change)).clamp(0.005, 1.0) as f32;
+        self.grid_size = (f64::from(self.grid_size) * (1.0 + change))
+            .clamp(0.005, 1.0) as f32;
         self.changes.grid_size = Some(self.grid_size);
 
         let center = if let Some(v) = self.mouse_position {
             let aspect_ratio = f64::from(size.width) / f64::from(size.height);
-            let shift_amount = (f64::from(size.width) - f64::from(size.height)) / 2.0;
+            let shift_amount =
+                (f64::from(size.width) - f64::from(size.height)) / 2.0;
             let x_shifted = v.x - shift_amount;
             let x_scaled = x_shifted * aspect_ratio;
             Vector2::<f64>::scale(
@@ -175,6 +176,7 @@ impl State {
         self.changes.cells = Some(self.get_cells());
     }
 
+    #[allow(clippy::too_many_lines)] // it's just barely over
     pub fn handle_window_event(&mut self, event: &WindowEvent) {
         let c_char = SmolStr::new_static("c");
 
@@ -336,7 +338,7 @@ impl State {
                 }
                 #[cfg(feature = "saving")]
                 QueueAction::Load(save) => {
-                    self.load_action(save);
+                    self.load_action(&save);
                 }
             }
         }
@@ -357,7 +359,7 @@ impl State {
     }
 
     #[cfg(feature = "saving")]
-    fn load_action(&mut self, save: SaveGame) {
+    fn load_action(&mut self, save: &SaveGame) {
         self.clear_action();
         self.living_cells = save.living_cells();
         self.pan_position = save.pan_position();
@@ -446,7 +448,7 @@ impl State {
         {
             self.input_queue.push_back(QueueAction::Load(save.clone()));
         } else {
-            self.load_action(save.clone());
+            self.load_action(save);
         }
     }
 
@@ -541,7 +543,7 @@ impl State {
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
-            loop_state: LoopState::new(),
+            loop_s: LoopState::new(),
             interval: DEFAULT_INTERVAL,
             window,
             mouse_position: None,
@@ -554,7 +556,20 @@ impl State {
             changes: StateChanges::default(),
             #[cfg(feature = "saving")]
             save_file: Some(save_file),
+            left_down_at: None,
+            moved_since_lmb: Vector2::default(),
         }
+    }
+
+    fn handle_toggle(&mut self, mouse_position: Vector2<f64>) {
+        let size = self.window.inner_size();
+        let cell_pos = find_cell_num(
+            size,
+            mouse_position,
+            self.pan_position,
+            self.grid_size,
+        );
+        self.toggle_action(cell_pos);
     }
 
     pub fn step(&mut self) {
@@ -575,20 +590,8 @@ impl State {
         self.load_action(save.clone());
     }
 
-    fn handle_left(&mut self, mouse_position: Vector2<f64>) {
-        let size = self.window.inner_size();
-        let cell_pos = find_cell_num(
-            size,
-            mouse_position,
-            self.pan_position,
-            self.grid_size,
-        );
-
-        self.left_action(cell_pos);
-    }
-
     pub fn update(&mut self) -> StateChanges {
-        let should_step = self.loop_state.update(&self.interval);
+        let should_step = self.loop_s.update(&self.interval);
 
         if should_step {
             self.step();
@@ -694,7 +697,10 @@ impl LoopState {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "native_threads", feature = "gloo_threads")),
+    allow(dead_code)
+)]
 enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),
@@ -713,7 +719,7 @@ fn to_cell(cell: Vector2<i32>, grid_size: f32) -> Cell {
     }
 }
 
-fn get_adjacent(coords: &Vector2<i32>) -> [Vector2<i32>; 8] {
+fn get_adjacent(coords: Vector2<i32>) -> [Vector2<i32>; 8] {
     [
         [coords.x - 1, coords.y - 1].into(),
         [coords.x - 1, coords.y + 1].into(),
@@ -738,7 +744,10 @@ fn find_cell_num(
     let x_scaled = x_shifted * aspect_ratio;
     let position_scaled = Vector2::<f64>::scale(
         Vector2::new(x_scaled, position.y),
-        Vector2::new(f64::from(size.width).recip(), f64::from(size.height).recip()),
+        Vector2::new(
+            f64::from(size.width).recip(),
+            f64::from(size.height).recip(),
+        ),
     );
     let final_position =
         (position_scaled / grid_size.into()) + (offset / f64::from(grid_size));
@@ -752,7 +761,7 @@ fn compute_step(prev: &LivingList) -> LivingList {
     let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
     for i in prev {
-        for j in get_adjacent(i) {
+        for j in get_adjacent(*i) {
             if let Some(c) = adjacency_rec.get(&j) {
                 adjacency_rec.insert(j, *c + 1);
             } else {
@@ -763,14 +772,14 @@ fn compute_step(prev: &LivingList) -> LivingList {
 
     adjacency_rec
         .into_iter()
-        .filter(|(coords, count)| alive_rules(count, prev, coords))
+        .filter(|(coords, count)| alive_rules(*count, prev, *coords))
         .map(|(coords, _count)| coords)
         .collect()
 }
 
-#[inline(always)]
-fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
-    3 == *count || (2 == *count && prev.contains(coords))
+#[inline]
+fn alive_rules(count: u32, prev: &LivingList, coords: Vector2<i32>) -> bool {
+    3 == count || (2 == count && prev.contains(&coords))
 }
 
 impl Drop for State {

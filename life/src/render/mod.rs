@@ -199,7 +199,7 @@ mod gui;
 
 /// The state of the renderer. It contains the graphical user interface as well
 /// as all the information required to render to the screen.
-pub struct RenderState<'a> {
+pub struct State<'a> {
     core: RenderCore<'a>,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
@@ -209,10 +209,10 @@ pub struct RenderState<'a> {
     grid_size: f32,
     rsc: BuffersAndGroups,
     bg_render_pipeline: wgpu::RenderPipeline,
-    egui: gui::GuiState,
+    egui: gui::State,
 }
 
-impl<'a> RenderState<'a> {
+impl<'a> State<'a> {
     /// Create a new `RenderState`, ready for rendering.
     ///
     /// # Args
@@ -226,7 +226,7 @@ impl<'a> RenderState<'a> {
         grid_size: f32,
         start_capacity: u64,
         game_state: Arc<Mutex<crate::game::State>>,
-    ) -> RenderState<'a> {
+    ) -> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -719,7 +719,7 @@ impl<'a> RenderState<'a> {
             bg_texture_bind_group,
         };
 
-        let egui = gui::GuiState::new(
+        let egui = gui::State::new(
             size,
             Arc::clone(&window),
             core.device.clone(),
@@ -860,8 +860,6 @@ impl<'a> RenderState<'a> {
     pub fn handle_event<T>(&mut self, event: &winit::event::Event<T>) -> bool {
         self.egui.handle_event(event)
     }
-
-    pub fn update(&mut self) {}
 
     /// Render to the window.
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
