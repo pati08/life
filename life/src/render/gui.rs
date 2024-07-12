@@ -22,8 +22,6 @@ use winit::{
     event::{ElementState, Event},
 };
 
-use crate::game::GameState;
-
 #[cfg(feature = "saving")]
 use crate::game::saving::SaveGame;
 
@@ -66,7 +64,7 @@ impl GuiState {
         window: Arc<winit::window::Window>,
         device: Arc<wgpu::Device>,
         surface_format: wgpu::TextureFormat,
-        game_state: Arc<Mutex<GameState>>,
+        game_state: Arc<Mutex<crate::game::State>>,
     ) -> GuiState {
         let platform = Platform::new(PlatformDescriptor {
             physical_width: size.width,
@@ -120,8 +118,12 @@ impl GuiState {
         self.render_pass
             .add_textures(&self.device, queue, &tdelta)
             .expect("add texture ok");
-        self.render_pass
-            .update_buffers(&self.device, queue, &paint_jobs, &screen_descriptor);
+        self.render_pass.update_buffers(
+            &self.device,
+            queue,
+            &paint_jobs,
+            &screen_descriptor,
+        );
 
         // Record all render passes.
         self.render_pass
@@ -144,8 +146,8 @@ impl GuiState {
     }
 }
 
-impl From<Arc<Mutex<GameState>>> for Gui {
-    fn from(from: Arc<Mutex<GameState>>) -> Self {
+impl From<Arc<Mutex<crate::game::State>>> for Gui {
+    fn from(from: Arc<Mutex<crate::game::State>>) -> Self {
         Self {
             game_state: from,
             #[cfg(feature = "saving")]
@@ -157,9 +159,9 @@ impl From<Arc<Mutex<GameState>>> for Gui {
 }
 
 /// The graphical user interface's persisted state, which contains everything
-/// it needs to render to an `Egui::Context`. 
+/// it needs to render to an `Egui::Context`.
 struct Gui {
-    game_state: Arc<Mutex<GameState>>,
+    game_state: Arc<Mutex<crate::game::State>>,
     #[cfg(feature = "saving")]
     new_save_name: String,
     intro_text_open: bool,
@@ -174,12 +176,9 @@ impl Gui {
     fn top_panel_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
         ui.horizontal(|ui| {
-            let reset_button =
-                ui.button(
-                    RichText::new("RESET GAME")
-                    .color(Color32::RED)
-                    .strong()
-                );
+            let reset_button = ui.button(
+                RichText::new("RESET GAME").color(Color32::RED).strong(),
+            );
             if reset_button.clicked() {
                 game.clear();
                 game.living_count_history = vec![0];
@@ -199,15 +198,17 @@ impl Gui {
             // - We can only set and get the interval through methods
             let speed_get_set = |set: Option<f64>| {
                 if let Some(v) = set {
-                    game.set_interval(std::time::Duration::from_secs_f64(v.powi(2)));
+                    game.set_interval(std::time::Duration::from_secs_f64(
+                        v.powi(2),
+                    ));
                 }
                 game.get_interval().as_secs_f64().sqrt()
             };
             ui.label("Speed: ");
             let speed_slider =
                 Slider::from_get_set(1f64..=0.01f64, speed_get_set)
-                .show_value(false)
-                .clamp_to_range(true);
+                    .show_value(false)
+                    .clamp_to_range(true);
             ui.add(speed_slider);
         });
     }
@@ -242,8 +243,9 @@ impl Gui {
                 plot_ui.line(line);
                 for i in game.toggle_record.iter() {
                     if *i != 0 {
-                        plot_ui
-                            .vline(VLine::new(*i as f64).color(Color32::LIGHT_GREEN));
+                        plot_ui.vline(
+                            VLine::new(*i as f64).color(Color32::LIGHT_GREEN),
+                        );
                     }
                 }
             });
@@ -263,7 +265,10 @@ impl Gui {
                 if ui.button("Load").clicked() {
                     game.load_save(&save);
                 }
-                if ui.button(RichText::new("Delete").color(Color32::RED)).clicked() {
+                if ui
+                    .button(RichText::new("Delete").color(Color32::RED))
+                    .clicked()
+                {
                     let _ = game.save_file.as_mut().unwrap().delete_save(i);
                 }
             });
@@ -277,8 +282,8 @@ impl Gui {
         if ui.button("Save").clicked() && !self.new_save_name.is_empty() {
             let new_save = SaveGame::new(
                 game.deref_mut(),
-                std::mem::take(&mut self.new_save_name)
-                );
+                std::mem::take(&mut self.new_save_name),
+            );
             game.save_file.as_mut().unwrap().add_save(new_save);
         }
     }
@@ -301,18 +306,23 @@ impl Gui {
 
         // Collapsible window with a game saving menu.
         #[cfg(feature = "saving")]
-        egui::Window::new("Game Saves")
-            .show(ctx, |ui| {
-                self.saving_ui(ui);
-            });
+        egui::Window::new("Game Saves").show(ctx, |ui| {
+            self.saving_ui(ui);
+        });
 
-        egui::Window::new("Introduction").open(&mut self.intro_text_open)
+        egui::Window::new("Introduction")
+            .open(&mut self.intro_text_open)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .collapsible(false)
             .show(ctx, |ui| {
                 let cache = &mut self.commonmark_cache;
-                commonmark_str!("intro_text", ui, cache, "life/src/render/intro.md");
+                commonmark_str!(
+                    "intro_text",
+                    ui,
+                    cache,
+                    "life/src/render/intro.md"
+                );
             });
     }
 }

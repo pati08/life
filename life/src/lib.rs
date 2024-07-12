@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 #![feature(if_let_guard)]
 #![warn(clippy::todo)]
+#![warn(clippy::pedantic)]
 
 use winit::{
     event::*,
@@ -19,13 +20,12 @@ mod render;
 use render::RenderState;
 
 mod game;
-use game::GameState;
 
 struct State<'a> {
     #[allow(dead_code)]
     window: Arc<Window>,
     render_state: RenderState<'a>,
-    game_state: Arc<Mutex<GameState>>,
+    game_state: Arc<Mutex<game::State>>,
 }
 
 /// The number of cells that will fit across the height of the window by default
@@ -53,7 +53,7 @@ impl<'a> State<'a> {
             //window.request_inner_size(PhysicalSize::new(800, 600)).unwrap();
         }
 
-        let game_state = Arc::new(Mutex::new(GameState::new(
+        let game_state = Arc::new(Mutex::new(game::State::new(
             window.clone(),
             DEFAULT_GRID_SIZE.recip(),
         )));
@@ -164,9 +164,10 @@ pub async fn run() {
                         match state.render_state.render() {
                             Ok(_) => {}
                             // Reconfigure the surface if it's lost or outdated
-                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                state.render_state.reconfigure()
-                            }
+                            Err(
+                                wgpu::SurfaceError::Lost
+                                | wgpu::SurfaceError::Outdated,
+                            ) => state.render_state.reconfigure(),
                             // The system is out of memory, we should probably quit
                             Err(wgpu::SurfaceError::OutOfMemory) => {
                                 log::error!("OutOfMemory");

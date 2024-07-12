@@ -1,4 +1,3 @@
-use super::GameState;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::PathBuf};
@@ -91,7 +90,7 @@ pub struct SaveGame {
 }
 
 impl SaveGame {
-    pub fn new(game_state: &GameState, name: String) -> Self {
+    pub fn new(game_state: &super::State, name: String) -> Self {
         Self {
             living_cells: game_state.living_cells.iter().cloned().collect(),
             grid_size: game_state.grid_size,

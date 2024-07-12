@@ -6,8 +6,6 @@ use std::{
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::game::GameState;
-
 /// The color of living cells when using solid coloring instead of a texture
 pub const CELL_COLOR: [f32; 4] = [0.17, 0.65, 0.22, 1.0]; // #2CA738
 
@@ -221,13 +219,13 @@ impl<'a> RenderState<'a> {
     /// window:
     /// An `Arc` to a winit window, to which we will be rendering
     ///
-    /// grid_size:
+    /// `grid_size`:
     /// The size of each grid cell as a fraction of the viewport's height.
     pub async fn new(
         window: Arc<Window>,
         grid_size: f32,
         start_capacity: u64,
-        game_state: Arc<Mutex<GameState>>,
+        game_state: Arc<Mutex<crate::game::State>>,
     ) -> RenderState<'a> {
         let size = window.inner_size();
 
@@ -306,11 +304,18 @@ impl<'a> RenderState<'a> {
         };
 
         // Create a buffer and bind group for the resolution of the window
-        let res_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Resolution Buffer"),
-            contents: bytemuck::cast_slice(&[size.width as f32, size.height as f32, 0.0, 0.0]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let res_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Resolution Buffer"),
+                contents: bytemuck::cast_slice(&[
+                    size.width as f32,
+                    size.height as f32,
+                    0.0,
+                    0.0,
+                ]),
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST,
+            });
 
         let res_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -327,21 +332,24 @@ impl<'a> RenderState<'a> {
                 }],
             });
 
-        let res_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Resolution Bind Group"),
-            layout: &res_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: res_buffer.as_entire_binding(),
-            }],
-        });
+        let res_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Resolution Bind Group"),
+                layout: &res_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: res_buffer.as_entire_binding(),
+                }],
+            });
 
         // Create a buffer and bind group for the grid size
-        let grid_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Radius Buffer"),
-            contents: bytemuck::cast_slice(&[grid_size, 0.0, 0.0, 0.0]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let grid_size_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Radius Buffer"),
+                contents: bytemuck::cast_slice(&[grid_size, 0.0, 0.0, 0.0]),
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST,
+            });
         let grid_size_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Radius Bind Group Layout"),
@@ -356,21 +364,23 @@ impl<'a> RenderState<'a> {
                     count: None,
                 }],
             });
-        let grid_size_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Radius Bind Group"),
-            layout: &grid_size_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: grid_size_buffer.as_entire_binding(),
-            }],
-        });
+        let grid_size_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Radius Bind Group"),
+                layout: &grid_size_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: grid_size_buffer.as_entire_binding(),
+                }],
+            });
 
         // Create a buffer and bind group for the color
-        let color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Color Buffer"),
-            contents: bytemuck::cast_slice(&CELL_COLOR),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let color_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Color Buffer"),
+                contents: bytemuck::cast_slice(&CELL_COLOR),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
         let color_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Color Bind Group Layout"),
@@ -385,14 +395,15 @@ impl<'a> RenderState<'a> {
                     count: None,
                 }],
             });
-        let color_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Color Bind Group"),
-            layout: &color_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: color_buffer.as_entire_binding(),
-            }],
-        });
+        let color_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Color Bind Group"),
+                layout: &color_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_buffer.as_entire_binding(),
+                }],
+            });
 
         let instances: Vec<Instance> = Vec::new();
 
@@ -405,11 +416,20 @@ impl<'a> RenderState<'a> {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&instances));
+        queue.write_buffer(
+            &instance_buffer,
+            0,
+            bytemuck::cast_slice(&instances),
+        );
 
         let diffuse_bytes = include_bytes!("../../rsc/live.png");
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "live.png").unwrap();
+        let diffuse_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            diffuse_bytes,
+            "live.png",
+        )
+        .unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -420,66 +440,89 @@ impl<'a> RenderState<'a> {
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
                             view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ty: wgpu::BindingType::Sampler(
+                            wgpu::SamplerBindingType::Filtering,
+                        ),
                         count: None,
                     },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
+        let diffuse_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(
+                            &diffuse_texture.view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(
+                            &diffuse_texture.sampler,
+                        ),
+                    },
+                ],
+                label: Some("diffuse_bind_group"),
+            });
 
         let bg_texture_bytes = include_bytes!("../../rsc/dead.png");
-        let bg_texture =
-            texture::Texture::from_bytes(&device, &queue, bg_texture_bytes, "dead.png").unwrap();
-        let bg_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&bg_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&bg_texture.sampler),
-                },
-            ],
-            label: Some("bg_texture_bind_group"),
-        });
+        let bg_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            bg_texture_bytes,
+            "dead.png",
+        )
+        .unwrap();
+        let bg_texture_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(
+                            &bg_texture.view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(
+                            &bg_texture.sampler,
+                        ),
+                    },
+                ],
+                label: Some("bg_texture_bind_group"),
+            });
 
         let vertices = cell_vertices(grid_size);
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
+        let vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST,
+            });
 
-        let offset_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Offset Buffer"),
-            contents: bytemuck::cast_slice(&[0.0, 0.0, 0.0, 0.0]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let offset_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Offset Buffer"),
+                contents: bytemuck::cast_slice(&[0.0, 0.0, 0.0, 0.0]),
+                usage: wgpu::BufferUsages::UNIFORM
+                    | wgpu::BufferUsages::COPY_DST,
+            });
         let offset_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("offset_bind_group_layout"),
@@ -494,21 +537,23 @@ impl<'a> RenderState<'a> {
                     count: None,
                 }],
             });
-        let offset_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("offset_bind_group"),
-            layout: &offset_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: offset_buffer.as_entire_binding(),
-            }],
-        });
+        let offset_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("offset_bind_group"),
+                layout: &offset_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: offset_buffer.as_entire_binding(),
+                }],
+            });
 
         let bg_vertices = Vertex::new_bg();
-        let bg_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BG Vertex Buffer"),
-            contents: bytemuck::cast_slice(&bg_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let bg_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BG Vertex Buffer"),
+                contents: bytemuck::cast_slice(&bg_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
         // let depth_texture =
         //     texture::Texture::create_depth_texture(&device, &config, "depth_texture");
@@ -516,10 +561,11 @@ impl<'a> RenderState<'a> {
         // Loads the shader at runtime. Change this for prod, but it makes shader
         // changes faster.
         let shader_string = include_str!("./shader.wgsl");
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(shader_string.into()),
-        });
+        let shader =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_string.into()),
+            });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -534,54 +580,58 @@ impl<'a> RenderState<'a> {
                 push_constant_ranges: &[],
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc(), Instance::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
-                // or Features::POLYGON_MODE_POINT
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
-            multiview: None,
-        });
+        let render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::desc(), Instance::desc()],
+                    compilation_options:
+                        wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options:
+                        wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
+                    // or Features::POLYGON_MODE_POINT
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    // Requires Features::DEPTH_CLIP_CONTROL
+                    unclipped_depth: false,
+                    // Requires Features::CONSERVATIVE_RASTERIZATION
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                // If the pipeline will be used with a multiview render pass, this
+                // indicates how many array layers the attachments will have.
+                multiview: None,
+            });
 
         let bg_shader_string = include_str!("./bg.wgsl");
-        let bg_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BG Shader"),
-            source: wgpu::ShaderSource::Wgsl(bg_shader_string.into()),
-        });
+        let bg_shader =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("BG Shader"),
+                source: wgpu::ShaderSource::Wgsl(bg_shader_string.into()),
+            });
         let bg_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("BG Render Pipeline Layout"),
@@ -593,42 +643,45 @@ impl<'a> RenderState<'a> {
                 ],
                 push_constant_ranges: &[],
             });
-        let bg_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("BG Render Pipeline"),
-            layout: Some(&bg_render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &bg_shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &bg_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
+        let bg_render_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("BG Render Pipeline"),
+                layout: Some(&bg_render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &bg_shader,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::desc()],
+                    compilation_options:
+                        wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &bg_shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options:
+                        wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+            });
 
         let surface = Arc::new(surface);
         let device = Arc::new(device);
@@ -709,19 +762,22 @@ impl<'a> RenderState<'a> {
         // Create a new buffer and replace the old one if needed. The new buffer
         // grows exponentially to get amortized O(1) insertions.
         if instance_count as u64 > self.rsc.instance_buffer_capacity {
-            let instance_buffer = self.core.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Instance Buffer"),
-                // size: std::mem::size_of::<Instance>() as u64 * 80u64,
-                size: std::mem::size_of::<Instance>() as u64 * new_size,
-                usage: wgpu::BufferUsages::VERTEX
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
+            let instance_buffer =
+                self.core.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Instance Buffer"),
+                    // size: std::mem::size_of::<Instance>() as u64 * 80u64,
+                    size: std::mem::size_of::<Instance>() as u64 * new_size,
+                    usage: wgpu::BufferUsages::VERTEX
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                });
             // Write the data
-            self.core
-                .queue
-                .write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&new_instances));
+            self.core.queue.write_buffer(
+                &instance_buffer,
+                0,
+                bytemuck::cast_slice(&new_instances),
+            );
             self.rsc.instance_buffer_capacity = new_size;
             self.rsc.instance_buffer = instance_buffer;
         } else {
@@ -745,9 +801,11 @@ impl<'a> RenderState<'a> {
         let mut data = Vec::with_capacity(4);
         data.extend(offset);
         data.extend([0.0, 0.0]);
-        self.core
-            .queue
-            .write_buffer(&self.rsc.offset_buffer, 0, bytemuck::cast_slice(&data[..]));
+        self.core.queue.write_buffer(
+            &self.rsc.offset_buffer,
+            0,
+            bytemuck::cast_slice(&data[..]),
+        );
     }
 
     /// Change the grid size used for rendering.
@@ -756,13 +814,17 @@ impl<'a> RenderState<'a> {
             return;
         }
         let vertices = cell_vertices(new);
-        self.core
-            .queue
-            .write_buffer(&self.rsc.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        self.core.queue.write_buffer(
+            &self.rsc.vertex_buffer,
+            0,
+            bytemuck::cast_slice(&vertices),
+        );
 
-        self.core
-            .queue
-            .write_buffer(&self.rsc.radius_buffer, 0, bytemuck::cast_slice(&[new, 0.0, 0.0, 0.0]));
+        self.core.queue.write_buffer(
+            &self.rsc.radius_buffer,
+            0,
+            bytemuck::cast_slice(&[new, 0.0, 0.0, 0.0]),
+        );
     }
 
     /// Reconfigure and update the renderer for a new resolution
@@ -780,7 +842,12 @@ impl<'a> RenderState<'a> {
         self.core.queue.write_buffer(
             &self.rsc.res_buffer,
             0 as wgpu::BufferAddress,
-            bytemuck::cast_slice(&[new_size.width as f32, new_size.height as f32, 0.0, 0.0]),
+            bytemuck::cast_slice(&[
+                new_size.width as f32,
+                new_size.height as f32,
+                0.0,
+                0.0,
+            ]),
         );
     }
 
@@ -803,62 +870,80 @@ impl<'a> RenderState<'a> {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder =
-            self.core
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
+        let mut encoder = self.core.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            },
+        );
 
         // Create and complete the render pass for the background
         {
-            let mut first_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("BG Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+            let mut first_render_pass =
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("BG Render Pass"),
+                    color_attachments: &[Some(
+                        wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color {
+                                    r: 0.1,
+                                    g: 0.2,
+                                    b: 0.3,
+                                    a: 1.0,
+                                }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        },
+                    )],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
 
             first_render_pass.set_pipeline(&self.bg_render_pipeline);
 
-            first_render_pass.set_bind_group(0, &self.rsc.offset_bind_group, &[]);
-            first_render_pass.set_bind_group(1, &self.rsc.radius_bind_group, &[]);
-            first_render_pass.set_bind_group(2, &self.rsc.bg_texture_bind_group, &[]);
+            first_render_pass.set_bind_group(
+                0,
+                &self.rsc.offset_bind_group,
+                &[],
+            );
+            first_render_pass.set_bind_group(
+                1,
+                &self.rsc.radius_bind_group,
+                &[],
+            );
+            first_render_pass.set_bind_group(
+                2,
+                &self.rsc.bg_texture_bind_group,
+                &[],
+            );
             first_render_pass.set_bind_group(3, &self.rsc.res_bind_group, &[]);
 
-            first_render_pass.set_vertex_buffer(0, self.rsc.bg_vertex_buffer.slice(..));
+            first_render_pass
+                .set_vertex_buffer(0, self.rsc.bg_vertex_buffer.slice(..));
 
             first_render_pass.draw(0..6, 0..1);
         }
         // Create and complete the primary render pass, for the cells.
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+            let mut render_pass =
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(
+                        wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        },
+                    )],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.rsc.res_bind_group, &[]);
@@ -868,15 +953,19 @@ impl<'a> RenderState<'a> {
             render_pass.set_bind_group(4, &self.rsc.offset_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.rsc.vertex_buffer.slice(..));
 
-            render_pass.set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));
+            render_pass
+                .set_vertex_buffer(1, self.rsc.instance_buffer.slice(..));
 
             render_pass.draw(0..self.num_vertices, 0..self.cells.len() as _);
         }
 
         // Render the GUI
-        let (encoder, egui_tdelta) =
-            self.egui
-                .render(&self.core.config, &self.core.queue, &view, encoder);
+        let (encoder, egui_tdelta) = self.egui.render(
+            &self.core.config,
+            &self.core.queue,
+            &view,
+            encoder,
+        );
 
         self.core.queue.submit(iter::once(encoder.finish()));
 

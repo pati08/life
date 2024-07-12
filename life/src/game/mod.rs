@@ -1,9 +1,5 @@
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{
-    collections::VecDeque,
-    time::Duration,
-    sync::Arc
-};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 #[cfg(feature = "native_threads")]
 use std::thread::JoinHandle;
@@ -12,24 +8,26 @@ use std::thread::JoinHandle;
 use std::sync::{
     self,
     atomic::{self, AtomicBool},
-    mpsc, Condvar, Mutex
+    mpsc, Condvar, Mutex,
 };
 
-use winit::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr},
-    window::Window,
-};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+use winit::{
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::{
+        ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
+    },
+    keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr},
+    window::Window,
+};
 
 #[cfg(feature = "saving")]
-use crate::game::saving::SaveFile;
-#[cfg(feature = "saving")]
 use self::saving::SaveGame;
+#[cfg(feature = "saving")]
+use crate::game::saving::SaveFile;
 
 use super::render::Cell;
 use vec2::Vector2;
@@ -45,18 +43,17 @@ const INTERVAL_P: f32 = 1.2;
 
 type LivingList = FxHashSet<Vector2<i32>>;
 
-pub struct GameState {
+pub struct State {
     pan_position: Vector2<f64>,
     /// A hashset of cells (by coordinates) that are living.
     living_cells: LivingList,
     /// Timing and play information
-    loop_state: LoopState,
+    loop_s: LoopState,
     /// The interval between steps in auto-play mode
     interval: std::time::Duration,
     window: Arc<Window>,
     mouse_position: Option<Vector2<f64>>,
     grid_size: f32,
-    drag_state: DragState,
     /// A queue of inputs that were made during computation and therefore
     /// deferred.
     input_queue: VecDeque<QueueAction>,
@@ -84,11 +81,14 @@ pub struct GameState {
     /// the game is closed.
     #[cfg(feature = "saving")]
     pub save_file: Option<saving::SaveFile>,
+
+    left_down_at: Option<Instant>,
+    moved_since_lmb: Vector2<f64>,
 }
 
-impl GameState {
+impl State {
     pub fn is_playing(&self) -> bool {
-        self.loop_state.is_playing()
+        self.loop_s.is_playing()
     }
 
     /// The current number of living cells
@@ -106,12 +106,12 @@ impl GameState {
 
     /// Toggles playing. If it is starting, then it steps immediately.
     pub fn toggle_playing(&mut self) {
-        if self.loop_state.is_playing() {
-            self.loop_state = LoopState::Stopped;
+        if self.loop_s.is_playing() {
+            self.loop_s = LoopState::Stopped;
         } else {
             self.step();
             let now = Instant::now();
-            self.loop_state = LoopState::Playing { last_update: now }
+            self.loop_s = LoopState::Playing { last_update: now }
         }
     }
 
@@ -134,14 +134,17 @@ impl GameState {
 
         let prev_size = self.grid_size;
         let size = self.window.inner_size();
-        let change = size.height as f64
-            * 0.000005
+        let change = f64::from(size.height)
+            * 0.000_005
             * match delta {
-                MouseScrollDelta::LineDelta(_, n) => n as f64,
-                MouseScrollDelta::PixelDelta(PhysicalPosition { y, .. }) => y * PIXEL_MUL
+                MouseScrollDelta::LineDelta(_, n) => f64::from(n),
+                MouseScrollDelta::PixelDelta(PhysicalPosition {
+                    y, ..
+                }) => y * PIXEL_MUL,
             };
 
-        self.grid_size = (self.grid_size as f64 * (1.0 + change)).clamp(0.005, 1.0) as f32;
+        self.grid_size =
+            (self.grid_size as f64 * (1.0 + change)).clamp(0.005, 1.0) as f32;
         self.changes.grid_size = Some(self.grid_size);
 
         let center = if let Some(v) = self.mouse_position {
@@ -151,7 +154,10 @@ impl GameState {
             let x_scaled = x_shifted * aspect_ratio;
             Vector2::<f64>::scale(
                 Vector2::new(x_scaled, v.y),
-                Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
+                Vector2::new(
+                    (size.width as f64).recip(),
+                    (size.height as f64).recip(),
+                ),
             ) + self.pan_position
         } else {
             Vector2::<f64>::new(0.0, 0.0)
@@ -212,7 +218,6 @@ impl GameState {
             // Forget the cursor position if it left the window
             WindowEvent::CursorLeft { .. } => {
                 self.mouse_position = None;
-                //self.drag_state = DragState::NotDragging;
             }
 
             // Zooming with scroll
@@ -228,44 +233,31 @@ impl GameState {
             //
             // This block also handles panning
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_position = Some([position.x, position.y].into());
-                if let DragState::Dragging { prev_pos } = self.drag_state {
-                    let pos = self.mouse_position.unwrap();
+                let new_pos = [position.x, position.y].into();
+                if self.left_down_at.is_some() {
+                    let prev_pos = self.mouse_position.unwrap();
                     let size = self.window.inner_size();
                     let w = size.width as f64;
                     let h = size.height as f64;
                     let ratio = w / h;
 
-                    let pix_diff = pos - prev_pos;
-                    let norm_diff =
-                        Vector2::<f64>::scale(pix_diff, Vector2::new(w.recip(), h.recip()));
-                    let raw_diff = Vector2::<f64>::scale(norm_diff, Vector2::new(ratio, 1.0));
-                    let diff = raw_diff; // self.grid_size as f64;
+                    let pix_diff =
+                        Vector2::from([position.x, position.y]) - prev_pos;
+                    let norm_diff = Vector2::<f64>::scale(
+                        pix_diff,
+                        Vector2::new(w.recip(), h.recip()),
+                    );
+                    let diff = Vector2::<f64>::scale(
+                        norm_diff,
+                        Vector2::new(ratio, 1.0),
+                    );
 
                     self.pan_position -= diff;
-                    self.drag_state = DragState::Dragging { prev_pos: pos };
                     self.changes.offset = Some(self.pan_position);
+                    self.moved_since_lmb +=
+                        Vector2::new(diff.x.abs(), diff.y.abs());
                 }
-            }
-
-            // Start panning
-            WindowEvent::MouseInput {
-                button: MouseButton::Right,
-                state: ElementState::Pressed,
-                ..
-            } => {
-                if let Some(p) = self.mouse_position {
-                    self.drag_state = DragState::Dragging { prev_pos: p };
-                }
-            }
-
-            // Stop panning
-            WindowEvent::MouseInput {
-                button: MouseButton::Right,
-                state: ElementState::Released,
-                ..
-            } => {
-                self.drag_state = DragState::NotDragging;
+                self.mouse_position = Some(new_pos);
             }
 
             // Toggle autoplay with space
@@ -299,8 +291,23 @@ impl GameState {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } if let Some(mouse_position) = self.mouse_position => {
-                self.handle_left(mouse_position);
+            } => {
+                self.left_down_at = Some(Instant::now());
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if let Some(t) = self.left_down_at
+                    && let Some(p) = self.mouse_position
+                    && (t.elapsed() < Duration::from_millis(150)
+                        || self.moved_since_lmb.magnitude() < 0.005)
+                {
+                    self.handle_toggle(p);
+                }
+                self.left_down_at = None;
+                self.moved_since_lmb = Vector2::default();
             }
             _ => (),
         };
@@ -325,7 +332,7 @@ impl GameState {
                     self.clear_action();
                 }
                 QueueAction::Toggle(cell) => {
-                    self.left_action(cell);
+                    self.toggle_action(cell);
                 }
                 #[cfg(feature = "saving")]
                 QueueAction::Load(save) => {
@@ -337,7 +344,7 @@ impl GameState {
 
     /// Handle a left click by toggling the particular cell. This should not be
     /// called if the click was on the GUI.
-    fn left_action(&mut self, cell_pos: Vector2<i32>) {
+    fn toggle_action(&mut self, cell_pos: Vector2<i32>) {
         if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
             self.living_cells.remove(&i);
         } else {
@@ -363,7 +370,7 @@ impl GameState {
 }
 
 #[cfg(feature = "native_threads")]
-impl GameState {
+impl State {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         use StepThreadNotification as STN;
         let (tx, rx) = mpsc::channel();
@@ -408,12 +415,11 @@ impl GameState {
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
-            loop_state: LoopState::new(),
+            loop_s: LoopState::new(),
             interval: DEFAULT_INTERVAL,
             window,
             mouse_position: None,
             grid_size,
-            drag_state: DragState::NotDragging,
             thread_data,
             input_queue: VecDeque::new(),
             living_cell_count: 0,
@@ -425,6 +431,8 @@ impl GameState {
             save_file: Some(save_file),
             #[cfg(target_arch = "wasm32")]
             scroll_mode: Default::default(),
+            left_down_at: None,
+            moved_since_lmb: Vector2::default(),
         }
     }
 
@@ -451,7 +459,8 @@ impl GameState {
         {
             return;
         }
-        let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+        let mut noti_lock =
+            self.thread_data.shared.notification.lock().unwrap();
         *noti_lock = StepThreadNotification::Compute(self.living_cells.clone());
         self.thread_data.shared.condvar.notify_all();
     }
@@ -469,9 +478,14 @@ impl GameState {
         }
     }
 
-    fn handle_left(&mut self, mouse_position: Vector2<f64>) {
+    fn handle_toggle(&mut self, mouse_position: Vector2<f64>) {
         let size = self.window.inner_size();
-        let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
+        let cell_pos = find_cell_num(
+            size,
+            mouse_position,
+            self.pan_position,
+            self.grid_size,
+        );
         if self
             .thread_data
             .shared
@@ -480,12 +494,12 @@ impl GameState {
         {
             self.input_queue.push_back(QueueAction::Toggle(cell_pos));
         } else {
-            self.left_action(cell_pos);
+            self.toggle_action(cell_pos);
         }
     }
 
     pub fn update(&mut self) -> StateChanges {
-        let should_step = self.loop_state.update(&self.interval);
+        let should_step = self.loop_s.update(&self.interval);
 
         if should_step
             && !self
@@ -519,7 +533,7 @@ impl GameState {
 
 // #[cfg(not(any(feature = "native_threads", feature = "gloo_threads")))] // FIXME
 #[cfg(not(feature = "native_threads"))]
-impl GameState {
+impl State {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         #[cfg(feature = "saving")]
@@ -532,7 +546,6 @@ impl GameState {
             window,
             mouse_position: None,
             grid_size,
-            drag_state: DragState::NotDragging,
             input_queue: VecDeque::new(),
             living_cell_count: 0,
             step_count: 0,
@@ -564,7 +577,12 @@ impl GameState {
 
     fn handle_left(&mut self, mouse_position: Vector2<f64>) {
         let size = self.window.inner_size();
-        let cell_pos = find_cell_num(size, mouse_position, self.pan_position, self.grid_size);
+        let cell_pos = find_cell_num(
+            size,
+            mouse_position,
+            self.pan_position,
+            self.grid_size,
+        );
 
         self.left_action(cell_pos);
     }
@@ -676,11 +694,6 @@ impl LoopState {
     }
 }
 
-enum DragState {
-    Dragging { prev_pos: Vector2<f64> },
-    NotDragging,
-}
-
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum QueueAction {
     Clear,
@@ -727,7 +740,8 @@ fn find_cell_num(
         Vector2::new(x_scaled, position.y),
         Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
     );
-    let final_position = (position_scaled / grid_size.into()) + (offset / grid_size as f64);
+    let final_position =
+        (position_scaled / grid_size.into()) + (offset / grid_size as f64);
     Vector2::new(
         final_position.x.floor() as i32,
         final_position.y.floor() as i32,
@@ -759,18 +773,21 @@ fn alive_rules(count: &u32, prev: &LivingList, coords: &Vector2<i32>) -> bool {
     3 == *count || (2 == *count && prev.contains(coords))
 }
 
-impl Drop for GameState {
+impl Drop for State {
     fn drop(&mut self) {
         #[cfg(feature = "native_threads")]
         {
             // Terminate the processing thread
-            let mut noti_lock = self.thread_data.shared.notification.lock().unwrap();
+            let mut noti_lock =
+                self.thread_data.shared.notification.lock().unwrap();
             *noti_lock = StepThreadNotification::Exit;
         }
 
         // Write the save file to the disk
         #[cfg(feature = "saving")]
-        if let Err(e) = std::mem::take(&mut self.save_file).unwrap().write_to_disk() {
+        if let Err(e) =
+            std::mem::take(&mut self.save_file).unwrap().write_to_disk()
+        {
             log::error!("Failed to write saves with error:\n{}", e);
         };
     }
