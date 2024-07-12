@@ -92,7 +92,7 @@ pub struct SaveGame {
 impl SaveGame {
     pub fn new(game_state: &super::State, name: String) -> Self {
         Self {
-            living_cells: game_state.living_cells.iter().cloned().collect(),
+            living_cells: game_state.living_cells.iter().copied().collect(),
             grid_size: game_state.grid_size,
             pan_position: game_state.pan_position,
             created: chrono::Local::now(),
@@ -100,7 +100,7 @@ impl SaveGame {
         }
     }
     pub fn living_cells(&self) -> FxHashSet<Vector2<i32>> {
-        self.living_cells.iter().cloned().collect()
+        self.living_cells.iter().copied().collect()
     }
     pub fn pan_position(&self) -> Vector2<f64> {
         self.pan_position

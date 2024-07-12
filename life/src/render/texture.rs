@@ -1,4 +1,4 @@
-use anyhow::*;
+use anyhow::{Ok, Result};
 use image::GenericImageView;
 
 /// A texture that has been loaded for rendering.

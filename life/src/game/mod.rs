@@ -144,26 +144,26 @@ impl State {
             };
 
         self.grid_size =
-            (self.grid_size as f64 * (1.0 + change)).clamp(0.005, 1.0) as f32;
+            (f64::from(self.grid_size) * (1.0 + change)).clamp(0.005, 1.0) as f32;
         self.changes.grid_size = Some(self.grid_size);
 
         let center = if let Some(v) = self.mouse_position {
-            let aspect_ratio = size.width as f64 / size.height as f64;
-            let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
+            let aspect_ratio = f64::from(size.width) / f64::from(size.height);
+            let shift_amount = (f64::from(size.width) - f64::from(size.height)) / 2.0;
             let x_shifted = v.x - shift_amount;
             let x_scaled = x_shifted * aspect_ratio;
             Vector2::<f64>::scale(
                 Vector2::new(x_scaled, v.y),
                 Vector2::new(
-                    (size.width as f64).recip(),
-                    (size.height as f64).recip(),
+                    f64::from(size.width).recip(),
+                    f64::from(size.height).recip(),
                 ),
             ) + self.pan_position
         } else {
             Vector2::<f64>::new(0.0, 0.0)
         };
 
-        let change = (self.grid_size / prev_size) as f64 - 1.0;
+        let change = f64::from(self.grid_size / prev_size) - 1.0;
 
         // Technically the math works out to the opposite of this, but this is
         // what works with the current coordinate system.
@@ -237,8 +237,8 @@ impl State {
                 if self.left_down_at.is_some() {
                     let prev_pos = self.mouse_position.unwrap();
                     let size = self.window.inner_size();
-                    let w = size.width as f64;
-                    let h = size.height as f64;
+                    let w = f64::from(size.width);
+                    let h = f64::from(size.height);
                     let ratio = w / h;
 
                     let pix_diff =
@@ -345,7 +345,7 @@ impl State {
     /// Handle a left click by toggling the particular cell. This should not be
     /// called if the click was on the GUI.
     fn toggle_action(&mut self, cell_pos: Vector2<i32>) {
-        if let Some(i) = self.living_cells.get(&cell_pos).cloned() {
+        if let Some(i) = self.living_cells.get(&cell_pos).copied() {
             self.living_cells.remove(&i);
         } else {
             self.living_cells.insert(cell_pos);
@@ -639,13 +639,13 @@ pub struct StateChanges {
 impl std::ops::AddAssign<StateChanges> for StateChanges {
     fn add_assign(&mut self, other: StateChanges) {
         if other.grid_size.is_some() {
-            self.grid_size = other.grid_size
+            self.grid_size = other.grid_size;
         };
         if other.cells.is_some() {
-            self.cells = other.cells
+            self.cells = other.cells;
         };
         if other.offset.is_some() {
-            self.offset = other.offset
+            self.offset = other.offset;
         };
     }
 }
@@ -732,16 +732,16 @@ fn find_cell_num(
     offset: Vector2<f64>,
     grid_size: f32,
 ) -> Vector2<i32> {
-    let aspect_ratio = size.width as f64 / size.height as f64;
-    let shift_amount = (size.width as f64 - size.height as f64) / 2.0;
+    let aspect_ratio = f64::from(size.width) / f64::from(size.height);
+    let shift_amount = (f64::from(size.width) - f64::from(size.height)) / 2.0;
     let x_shifted = position.x - shift_amount;
     let x_scaled = x_shifted * aspect_ratio;
     let position_scaled = Vector2::<f64>::scale(
         Vector2::new(x_scaled, position.y),
-        Vector2::new((size.width as f64).recip(), (size.height as f64).recip()),
+        Vector2::new(f64::from(size.width).recip(), f64::from(size.height).recip()),
     );
     let final_position =
-        (position_scaled / grid_size.into()) + (offset / grid_size as f64);
+        (position_scaled / grid_size.into()) + (offset / f64::from(grid_size));
     Vector2::new(
         final_position.x.floor() as i32,
         final_position.y.floor() as i32,
@@ -751,7 +751,7 @@ fn find_cell_num(
 fn compute_step(prev: &LivingList) -> LivingList {
     let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
-    for i in prev.iter() {
+    for i in prev {
         for j in get_adjacent(i) {
             if let Some(c) = adjacency_rec.get(&j) {
                 adjacency_rec.insert(j, *c + 1);

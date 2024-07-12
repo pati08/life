@@ -5,7 +5,7 @@
 #![warn(clippy::pedantic)]
 
 use winit::{
-    event::*,
+    event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
     keyboard::{Key, NamedKey},
     window::{Window, WindowBuilder},
@@ -162,7 +162,7 @@ pub async fn run() {
 
                         state.render_state.update();
                         match state.render_state.render() {
-                            Ok(_) => {}
+                            Ok(()) => {}
                             // Reconfigure the surface if it's lost or outdated
                             Err(
                                 wgpu::SurfaceError::Lost
@@ -176,7 +176,7 @@ pub async fn run() {
 
                             // This happens when the a frame takes too long to present
                             Err(wgpu::SurfaceError::Timeout) => {
-                                log::warn!("Surface timeout")
+                                log::warn!("Surface timeout");
                             }
                         }
                     }

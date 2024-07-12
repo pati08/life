@@ -241,7 +241,7 @@ impl Gui {
             .show_axes(false) // This was causing annoying margins
             .show(ui, |plot_ui| {
                 plot_ui.line(line);
-                for i in game.toggle_record.iter() {
+                for i in &game.toggle_record {
                     if *i != 0 {
                         plot_ui.vline(
                             VLine::new(*i as f64).color(Color32::LIGHT_GREEN),
@@ -281,7 +281,7 @@ impl Gui {
             .show(ui);
         if ui.button("Save").clicked() && !self.new_save_name.is_empty() {
             let new_save = SaveGame::new(
-                game.deref_mut(),
+                &mut *game,
                 std::mem::take(&mut self.new_save_name),
             );
             game.save_file.as_mut().unwrap().add_save(new_save);
