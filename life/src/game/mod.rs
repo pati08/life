@@ -288,7 +288,7 @@ impl State {
                 self.step();
             }
 
-            // Cell state toggling with LMB
+            // Track the time since LMB was pressed
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
@@ -296,6 +296,9 @@ impl State {
             } => {
                 self.left_down_at = Some(Instant::now());
             }
+
+            // Toggle a cell if and only if the time since the left mouse button
+            // was pressed is very small.
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Left,
@@ -304,7 +307,7 @@ impl State {
                 if let Some(t) = self.left_down_at
                     && let Some(p) = self.mouse_position
                     && (t.elapsed() < Duration::from_millis(150)
-                        || self.moved_since_lmb.magnitude() < 0.005)
+                        && self.moved_since_lmb.magnitude() < 0.010)
                 {
                     self.handle_toggle(p);
                 }
