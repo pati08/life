@@ -1,8 +1,8 @@
-/target
+target/
 .direnv
 result
 result-bin
-rust-analyzer.json
 pkg
 dist
 cargo-cache
+save.json
