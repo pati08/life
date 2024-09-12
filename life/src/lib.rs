@@ -21,6 +21,8 @@ use wasm_bindgen::prelude::*;
 
 use std::sync::{Arc, Mutex};
 
+mod platform_impl;
+
 mod render;
 
 mod game;
