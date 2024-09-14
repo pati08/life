@@ -17,8 +17,9 @@ This list is pretty modest, but growing.
     - Game saving
 
 # To-do
-- Custom simulation rules and saving on the web
 - Built-in example setups.
+- UI Improvements
+- Customization
 
 # Building and running
 

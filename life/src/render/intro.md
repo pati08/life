@@ -20,6 +20,5 @@ You can also use the on-screen menus to change some options and view some inform
 
 # Coming Soon
 In order of priority:
-- Game saving on the web
 - Presets to explore
 - Custom rules
