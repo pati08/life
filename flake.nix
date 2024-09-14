@@ -62,6 +62,8 @@
 
               # for the crate graph
               graphviz
+
+              static-web-server
             ];
             nativeBuildInputs = with pkgs; [ pkg-config ] ;
             LIBCLANG_PATH = pkgs.lib.makeLibraryPath [pkgs.llvmPackages_latest.libclang.lib];

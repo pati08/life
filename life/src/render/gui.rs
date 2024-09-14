@@ -1,6 +1,5 @@
 use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta, Ui};
 
-#[cfg(feature = "saving")]
 use egui::TextEdit;
 use egui_commonmark::CommonMarkCache;
 
@@ -20,7 +19,6 @@ use winit::{
     event::{ElementState, Event},
 };
 
-#[cfg(feature = "saving")]
 use crate::game::saving::SaveGame;
 
 pub struct State {
@@ -147,7 +145,6 @@ impl From<Arc<Mutex<crate::game::State>>> for Gui {
     fn from(from: Arc<Mutex<crate::game::State>>) -> Self {
         Self {
             game_state: from,
-            #[cfg(feature = "saving")]
             new_save_name: String::new(),
             intro_text_open: true,
             commonmark_cache: CommonMarkCache::default(),
@@ -159,7 +156,6 @@ impl From<Arc<Mutex<crate::game::State>>> for Gui {
 /// it needs to render to an `Egui::Context`.
 struct Gui {
     game_state: Arc<Mutex<crate::game::State>>,
-    #[cfg(feature = "saving")]
     new_save_name: String,
     intro_text_open: bool,
     commonmark_cache: CommonMarkCache,
@@ -249,7 +245,6 @@ impl Gui {
     }
 
     /// Render the interface for saving and loading within some `Ui`.
-    #[cfg(feature = "saving")]
     fn saving_ui(&mut self, ui: &mut Ui) {
         let mut game = self.game_state.lock().unwrap();
 
@@ -300,7 +295,6 @@ impl Gui {
             .expect("Expected open window");
 
         // Collapsible window with a game saving menu.
-        #[cfg(feature = "saving")]
         egui::Window::new("Game Saves").show(ctx, |ui| {
             self.saving_ui(ui);
         });

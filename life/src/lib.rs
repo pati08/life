@@ -1,7 +1,7 @@
 #![feature(unboxed_closures)]
 #![feature(let_chains)]
 #![feature(if_let_guard)]
-#![warn(clippy::todo)]
+#![deny(clippy::todo)]
 #![warn(clippy::pedantic)]
 // When I cast like this, I always keep in mind the precision or truncation
 // issues anyway

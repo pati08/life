@@ -24,15 +24,12 @@ use winit::{
     window::Window,
 };
 
-#[cfg(feature = "saving")]
 use self::saving::SaveGame;
-#[cfg(feature = "saving")]
-use crate::game::saving::SaveFile;
+use crate::game::saving::SaveData;
 
 use super::render::Cell;
 use vec2::Vector2;
 
-#[cfg(feature = "saving")]
 pub mod saving;
 
 /// The interval between simulation steps in auto-play mode.
@@ -79,8 +76,7 @@ pub struct State {
 
     /// Saving data that is kept in memory during play and saved to disk when
     /// the game is closed.
-    #[cfg(feature = "saving")]
-    pub save_file: Option<saving::SaveFile>,
+    pub save_file: Option<saving::SaveData>,
 
     left_down_at: Option<Instant>,
     moved_since_lmb: Vector2<f64>,
@@ -339,7 +335,6 @@ impl State {
                 QueueAction::Toggle(cell) => {
                     self.toggle_action(cell);
                 }
-                #[cfg(feature = "saving")]
                 QueueAction::Load(save) => {
                     self.load_action(&save);
                 }
@@ -361,7 +356,6 @@ impl State {
         self.changes.cells = Some(cells);
     }
 
-    #[cfg(feature = "saving")]
     fn load_action(&mut self, save: &SaveGame) {
         self.clear_action();
         self.living_cells = save.living_cells();
@@ -414,8 +408,7 @@ impl State {
             shared: shared_thread_data,
         };
 
-        #[cfg(feature = "saving")]
-        let save_file = SaveFile::new("./save.json".into()).unwrap();
+        let save_file = SaveData::new().unwrap();
 
         Self {
             pan_position: [0.0, 0.0].into(),
@@ -432,7 +425,6 @@ impl State {
             living_count_history: vec![0],
             changes: StateChanges::default(),
             toggle_record: Vec::new(),
-            #[cfg(feature = "saving")]
             save_file: Some(save_file),
             #[cfg(target_arch = "wasm32")]
             scroll_mode: Default::default(),
@@ -441,7 +433,6 @@ impl State {
         }
     }
 
-    #[cfg(feature = "saving")]
     pub fn load_save(&mut self, save: &SaveGame) {
         if self
             .thread_data
@@ -540,9 +531,7 @@ impl State {
 #[cfg(not(feature = "native_threads"))]
 impl State {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[cfg(feature = "saving")]
-        let save_file = SaveFile::new("./save.json".into()).unwrap();
+        let save_file = SaveData::new().unwrap();
         Self {
             pan_position: [0.0, 0.0].into(),
             living_cells: FxHashSet::default(),
@@ -557,7 +546,6 @@ impl State {
             living_count_history: vec![0],
             toggle_record: Vec::new(),
             changes: StateChanges::default(),
-            #[cfg(feature = "saving")]
             save_file: Some(save_file),
             left_down_at: None,
             moved_since_lmb: Vector2::default(),
@@ -588,9 +576,8 @@ impl State {
         self.changes.cells = Some(Vec::new());
     }
 
-    #[cfg(feature = "saving")]
     pub fn load_save(&mut self, save: &SaveGame) {
-        self.load_action(save.clone());
+        self.load_action(save);
     }
 
     pub fn update(&mut self) -> StateChanges {
@@ -707,7 +694,6 @@ impl LoopState {
 enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),
-    #[cfg(feature = "saving")]
     Load(SaveGame),
 }
 
@@ -785,22 +771,12 @@ fn alive_rules(count: u32, prev: &LivingList, coords: Vector2<i32>) -> bool {
     3 == count || (2 == count && prev.contains(&coords))
 }
 
+#[cfg(feature = "native_threads")]
 impl Drop for State {
     fn drop(&mut self) {
-        #[cfg(feature = "native_threads")]
-        {
-            // Terminate the processing thread
-            let mut noti_lock =
-                self.thread_data.shared.notification.lock().unwrap();
-            *noti_lock = StepThreadNotification::Exit;
-        }
-
-        // Write the save file to the disk
-        #[cfg(feature = "saving")]
-        if let Err(e) =
-            std::mem::take(&mut self.save_file).unwrap().write_to_disk()
-        {
-            log::error!("Failed to write saves with error:\n{}", e);
-        };
+        // Terminate the processing thread
+        let mut noti_lock =
+            self.thread_data.shared.notification.lock().unwrap();
+        *noti_lock = StepThreadNotification::Exit;
     }
 }

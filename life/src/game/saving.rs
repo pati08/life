@@ -1,67 +1,44 @@
+use crate::platform_impl::DataHandle;
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read, path::PathBuf};
 use vec2::Vector2;
 
 /// A representation of a game save file. The saves are stored in memory unless
 /// written to disk via `SaveFile::write_to_disk`.
-pub struct SaveFile {
-    /// A vector of the saves
-    saves: Vec<SaveGame>,
-    /// A write-only file handle for the saves file
-    file: File,
+/// TODO: Remove the unwrap and make these return results
+pub struct SaveData {
+    inner: DataHandle<Vec<SaveGame>>,
 }
 
-impl SaveFile {
-    /// Create a new `SaveFile` by reading a file from disk. Returns an error
-    /// if the file does not exist.
-    fn new_from_disk(filepath: PathBuf) -> Result<Self, anyhow::Error> {
-        let data: Vec<SaveGame> = {
-            let mut buf = String::new();
-            File::open(&filepath)?.read_to_string(&mut buf)?;
-            serde_json::from_str(&buf)?
-        };
-        let file = File::create(filepath)?;
-        Ok(Self { saves: data, file })
-    }
-
-    /// Create a new `SaveFile` by creating a new file on the disk. Returns an
-    /// error if the file already exists.
-    fn new_and_new_file(filepath: PathBuf) -> Result<Self, anyhow::Error> {
-        let file = File::create_new(filepath)?;
-        Ok(Self {
-            saves: Vec::new(),
-            file,
-        })
-    }
-
-    /// Creates a new `SaveFile`. Uses the existing file on disk if it exists
-    /// or otherwise create a new one.
-    pub fn new(filepath: PathBuf) -> Result<Self, anyhow::Error> {
-        if let Ok(v) = Self::new_and_new_file(filepath.clone()) {
-            Ok(v)
-        } else {
-            Self::new_from_disk(filepath)
-        }
-    }
-
-    /// Write the savefile to the disk.
-    pub fn write_to_disk(self) -> Result<(), serde_json::Error> {
-        serde_json::to_writer_pretty(self.file, &self.saves)?;
-        Ok(())
+impl SaveData {
+    pub fn new() -> Result<Self, anyhow::Error> {
+        let inner = DataHandle::new("saves")?;
+        Ok(Self { inner })
     }
 
     /// Add a game save to the file.
     pub fn add_save(&mut self, save: SaveGame) {
-        self.saves.push(save);
+        self.inner
+            .update(move |saves| {
+                if let Some(saves) = saves {
+                    saves.push(save);
+                } else {
+                    saves.replace(vec![save]);
+                }
+            })
+            .unwrap();
     }
 
     /// Delete a save from the file at a given index. This is safe to perform on
     /// an index that is out of bounds. The function returns whether or not it
     /// removed a save.
     pub fn delete_save(&mut self, index: usize) -> bool {
-        if self.saves.len() > index {
-            self.saves.remove(index);
+        let saves = self.inner.get().unwrap();
+        if let Some(mut saves) = saves
+            && saves.len() > index
+        {
+            saves.remove(index);
+            self.inner.set(&saves).unwrap();
             true
         } else {
             false
@@ -70,16 +47,15 @@ impl SaveFile {
 
     /// Get an iterator over the game saves the file contains
     pub fn saves_iter(&self) -> impl Iterator<Item = SaveGame> {
-        self.saves.clone().into_iter()
+        self.inner.get().unwrap().unwrap_or_default().into_iter()
     }
-
     /// Get the number of stored saves
     pub fn save_count(&self) -> usize {
-        self.saves.len()
+        self.inner.get().unwrap().unwrap_or_default().len()
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 /// A record of a game that can be restored.
 pub struct SaveGame {
     living_cells: Vec<Vector2<i32>>,
