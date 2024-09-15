@@ -44,3 +44,13 @@ where
         }
     }
 }
+
+#[derive(Error, Debug)]
+pub enum PlatformWorkerError {
+    #[error("Disconnected")]
+    Disconnected,
+    #[error("Failed to post message to web worker")]
+    MessagePostFailed,
+    #[error("Serialization error")]
+    SerFailed,
+}

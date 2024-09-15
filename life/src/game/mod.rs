@@ -1,15 +1,6 @@
+use crate::platform_impl::PlatformWorker;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{collections::VecDeque, sync::Arc, time::Duration};
-
-#[cfg(feature = "native_threads")]
-use std::thread::JoinHandle;
-
-#[cfg(feature = "native_threads")]
-use std::sync::{
-    self,
-    atomic::{self, AtomicBool},
-    mpsc, Condvar, Mutex,
-};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -54,9 +45,8 @@ pub struct State {
     /// A queue of inputs that were made during computation and therefore
     /// deferred.
     input_queue: VecDeque<QueueAction>,
-    #[cfg(feature = "native_threads")]
     /// Synchronization between the main thread and the computing thread
-    thread_data: ThreadData,
+    worker: PlatformWorker<LivingList, LivingList>,
     living_cell_count: usize,
 
     /// These are for the statistics view
@@ -122,6 +112,9 @@ impl State {
     }
 
     fn handle_scroll(&mut self, delta: MouseScrollDelta) {
+        let factor =
+            f64::from(self.window.inner_size().height).recip() * 1400.0;
+
         #[cfg(not(target_arch = "wasm32"))]
         const PIXEL_MUL: f64 = 3.0;
 
@@ -130,10 +123,11 @@ impl State {
 
         let prev_size = self.grid_size;
         let size = self.window.inner_size();
-        let change = f64::from(size.height)
+        let change = factor
+            * f64::from(size.height)
             * 0.000_005
             * match delta {
-                MouseScrollDelta::LineDelta(_, n) => f64::from(n),
+                MouseScrollDelta::LineDelta(_, n) => f64::from(n) * 12.0,
                 MouseScrollDelta::PixelDelta(PhysicalPosition {
                     y, ..
                 }) => y * PIXEL_MUL,
@@ -366,49 +360,9 @@ impl State {
         self.changes.grid_size = Some(self.grid_size);
         self.changes.offset = Some(self.pan_position);
     }
-}
-
-#[cfg(feature = "native_threads")]
-impl State {
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        use StepThreadNotification as STN;
-        let (tx, rx) = mpsc::channel();
-        let condvar = Condvar::new();
-        let notification = Mutex::new(StepThreadNotification::Waiting);
-        let shared_thread_data = Arc::new(SharedThreadData {
-            condvar,
-            notification,
-            computing: AtomicBool::new(false),
-        });
-        let join_handle = {
-            let thread_data = Arc::clone(&shared_thread_data);
-            std::thread::spawn(move || loop {
-                let cvar = &thread_data.condvar;
-                let lock = &thread_data.notification;
-                let data_guard = lock.lock().unwrap();
-                let mut data_guard = cvar.wait(data_guard).unwrap();
-                match &*data_guard {
-                    STN::Exit => break,
-                    STN::Waiting => (),
-                    STN::Compute(data) => {
-                        thread_data
-                            .computing
-                            .store(true, sync::atomic::Ordering::Relaxed);
-                        tx.send(compute_step(data)).unwrap();
-                        *data_guard = STN::Waiting;
-                    }
-                }
-            })
-        };
-
-        let local_thread_data = LocalThreadData { join_handle, rx };
-
-        let thread_data = ThreadData {
-            local: local_thread_data,
-            shared: shared_thread_data,
-        };
-
         let save_file = SaveData::new().unwrap();
+        let worker = PlatformWorker::new(compute_step);
 
         Self {
             pan_position: [0.0, 0.0].into(),
@@ -418,7 +372,7 @@ impl State {
             window,
             mouse_position: None,
             grid_size,
-            thread_data,
+            worker,
             input_queue: VecDeque::new(),
             living_cell_count: 0,
             step_count: 0,
@@ -434,12 +388,12 @@ impl State {
     }
 
     pub fn load_save(&mut self, save: &SaveGame) {
-        if self
-            .thread_data
-            .shared
-            .computing
-            .load(atomic::Ordering::Relaxed)
-        {
+        // if self.worker.shared.computing.load(atomic::Ordering::Relaxed) {
+        //     self.input_queue.push_back(QueueAction::Load(save.clone()));
+        // } else {
+        //     self.load_action(save);
+        // }
+        if self.worker.computing() {
             self.input_queue.push_back(QueueAction::Load(save.clone()));
         } else {
             self.load_action(save);
@@ -447,27 +401,16 @@ impl State {
     }
 
     pub fn step(&mut self) {
-        if self
-            .thread_data
-            .shared
-            .computing
-            .load(atomic::Ordering::Relaxed)
-        {
+        if self.worker.computing() {
             return;
         }
-        let mut noti_lock =
-            self.thread_data.shared.notification.lock().unwrap();
-        *noti_lock = StepThreadNotification::Compute(self.living_cells.clone());
-        self.thread_data.shared.condvar.notify_all();
+        if let Err(e) = self.worker.send(self.living_cells.clone()) {
+            log::error!("Failed sending compute request to worker: {:?}", e);
+        };
     }
 
     pub fn clear(&mut self) {
-        if self
-            .thread_data
-            .shared
-            .computing
-            .load(atomic::Ordering::Relaxed)
-        {
+        if self.worker.computing() {
             self.input_queue.push_back(QueueAction::Clear);
         } else {
             self.clear_action();
@@ -482,12 +425,7 @@ impl State {
             self.pan_position,
             self.grid_size,
         );
-        if self
-            .thread_data
-            .shared
-            .computing
-            .load(atomic::Ordering::Relaxed)
-        {
+        if self.worker.computing() {
             self.input_queue.push_back(QueueAction::Toggle(cell_pos));
         } else {
             self.toggle_action(cell_pos);
@@ -497,129 +435,21 @@ impl State {
     pub fn update(&mut self) -> StateChanges {
         let should_step = self.loop_s.update(&self.interval);
 
-        if should_step
-            && !self
-                .thread_data
-                .shared
-                .computing
-                .load(atomic::Ordering::Relaxed)
-        {
+        if should_step && !self.worker.computing() {
             self.step();
         }
 
-        if let Ok(v) = self.thread_data.local.rx.try_recv() {
+        if let Ok(Some(v)) = self.worker.results() {
             self.living_cells = v;
             self.changes.cells = Some(self.get_cells());
-            self.thread_data
-                .shared
-                .computing
-                .store(false, atomic::Ordering::Relaxed);
-            let mut lock = self.thread_data.shared.notification.lock().unwrap();
-            *lock = StepThreadNotification::Waiting;
             self.step_count += 1;
             self.living_cell_count = self.living_cells.len();
             self.living_count_history.push(self.living_cell_count);
-            drop(lock);
             self.resolve_queue();
         }
 
         std::mem::take(&mut self.changes)
     }
-}
-
-// #[cfg(not(any(feature = "native_threads", feature = "gloo_threads")))] // FIXME
-#[cfg(not(feature = "native_threads"))]
-impl State {
-    pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
-        let save_file = SaveData::new().unwrap();
-        Self {
-            pan_position: [0.0, 0.0].into(),
-            living_cells: FxHashSet::default(),
-            loop_s: LoopState::new(),
-            interval: DEFAULT_INTERVAL,
-            window,
-            mouse_position: None,
-            grid_size,
-            input_queue: VecDeque::new(),
-            living_cell_count: 0,
-            step_count: 0,
-            living_count_history: vec![0],
-            toggle_record: Vec::new(),
-            changes: StateChanges::default(),
-            save_file: Some(save_file),
-            left_down_at: None,
-            moved_since_lmb: Vector2::default(),
-        }
-    }
-
-    fn handle_toggle(&mut self, mouse_position: Vector2<f64>) {
-        let size = self.window.inner_size();
-        let cell_pos = find_cell_num(
-            size,
-            mouse_position,
-            self.pan_position,
-            self.grid_size,
-        );
-        self.toggle_action(cell_pos);
-    }
-
-    pub fn step(&mut self) {
-        self.living_cells = compute_step(&self.living_cells);
-        self.changes.cells = Some(self.get_cells());
-        self.step_count += 1;
-        self.living_cell_count = self.living_cells.len();
-        self.living_count_history.push(self.living_cell_count);
-    }
-
-    pub fn clear(&mut self) {
-        self.living_cells.clear();
-        self.changes.cells = Some(Vec::new());
-    }
-
-    pub fn load_save(&mut self, save: &SaveGame) {
-        self.load_action(save);
-    }
-
-    pub fn update(&mut self) -> StateChanges {
-        let should_step = self.loop_s.update(&self.interval);
-
-        if should_step {
-            self.step();
-        }
-
-        self.resolve_queue();
-
-        std::mem::take(&mut self.changes)
-    }
-}
-
-#[cfg(feature = "native_threads")]
-enum StepThreadNotification {
-    Exit,
-    Waiting,
-    Compute(LivingList),
-}
-
-#[cfg(feature = "native_threads")]
-struct SharedThreadData {
-    notification: Mutex<StepThreadNotification>,
-    condvar: Condvar,
-    computing: AtomicBool,
-}
-
-#[cfg(feature = "native_threads")]
-struct ThreadData {
-    shared: Arc<SharedThreadData>,
-    local: LocalThreadData,
-}
-
-#[cfg(feature = "native_threads")]
-struct LocalThreadData {
-    // The join handle is good to have around, so we'll keep it here even though
-    // it's unused.
-    #[allow(dead_code)]
-    join_handle: JoinHandle<()>,
-    rx: mpsc::Receiver<LivingList>,
 }
 
 #[derive(Default)]
@@ -746,10 +576,11 @@ fn find_cell_num(
     )
 }
 
-fn compute_step(prev: &LivingList) -> LivingList {
+#[allow(clippy::needless_pass_by_value)]
+fn compute_step(prev: LivingList) -> LivingList {
     let mut adjacency_rec: FxHashMap<Vector2<i32>, u32> = FxHashMap::default();
 
-    for i in prev {
+    for i in &prev {
         for j in get_adjacent(*i) {
             if let Some(c) = adjacency_rec.get(&j) {
                 adjacency_rec.insert(j, *c + 1);
@@ -761,7 +592,7 @@ fn compute_step(prev: &LivingList) -> LivingList {
 
     adjacency_rec
         .into_iter()
-        .filter(|(coords, count)| alive_rules(*count, prev, *coords))
+        .filter(|(coords, count)| alive_rules(*count, &prev, *coords))
         .map(|(coords, _count)| coords)
         .collect()
 }
@@ -769,14 +600,4 @@ fn compute_step(prev: &LivingList) -> LivingList {
 #[inline]
 fn alive_rules(count: u32, prev: &LivingList, coords: Vector2<i32>) -> bool {
     3 == count || (2 == count && prev.contains(&coords))
-}
-
-#[cfg(feature = "native_threads")]
-impl Drop for State {
-    fn drop(&mut self) {
-        // Terminate the processing thread
-        let mut noti_lock =
-            self.thread_data.shared.notification.lock().unwrap();
-        *noti_lock = StepThreadNotification::Exit;
-    }
 }
