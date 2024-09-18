@@ -1,15 +1,17 @@
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::*;
-#[cfg(not(target_arch = "wasm32"))]
 mod native;
+#[cfg(not(target_arch = "wasm32"))]
+use native as plat_mod;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::{new_plat_worker, DataHandle};
 
 #[cfg(target_arch = "wasm32")]
 mod web;
 use serde::{Deserialize, Serialize};
 #[cfg(target_arch = "wasm32")]
-pub use web::*;
+pub use web::{new_plat_worker, DataHandle};
 
 use thiserror::Error;
 
@@ -63,6 +65,12 @@ enum Message<Args> {
     Process(Args),
 }
 
+pub trait ComputeWorker<Args: Send, Res: Send> {
+    fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError>;
+    fn results(&mut self) -> Result<Option<Res>, PlatformWorkerError>;
+    fn computing(&self) -> bool;
+}
+
 pub struct PlatformWorker<Args: Send, Res: Send> {
     tx: SyncSender<Message<Args>>,
     rx: Receiver<Res>,
@@ -70,8 +78,18 @@ pub struct PlatformWorker<Args: Send, Res: Send> {
 }
 
 impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
+    pub fn new<F: Fn(Args) -> Res + Send + 'static>(
+        fun: F,
+    ) -> Result<Self, PlatformWorkerError> {
+        new_plat_worker(fun)
+    }
+}
+
+impl<Args: Send + 'static, Res: Send + 'static> ComputeWorker<Args, Res>
+    for PlatformWorker<Args, Res>
+{
     /// Send some data over to be processed
-    pub fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
+    fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
         match self.tx.try_send(Message::Process(data)) {
             Ok(()) => {
                 self.computing = true;
@@ -84,7 +102,7 @@ impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
         }
     }
     /// Get results if they are available, but return immediately if not.
-    pub fn results(&mut self) -> Result<Option<Res>, PlatformWorkerError> {
+    fn results(&mut self) -> Result<Option<Res>, PlatformWorkerError> {
         match self.rx.try_recv() {
             Ok(res) => {
                 self.computing = false;
@@ -96,7 +114,7 @@ impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
             Err(mpsc::TryRecvError::Empty) => Ok(None),
         }
     }
-    pub fn computing(&self) -> bool {
+    fn computing(&self) -> bool {
         self.computing
     }
 }

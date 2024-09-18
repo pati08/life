@@ -1,4 +1,6 @@
-use crate::platform_impl::PlatformWorker;
+use crate::platform_impl::{
+    ComputeWorker, PlatformWorker, PlatformWorkerError,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{collections::VecDeque, time::Duration};
 
@@ -52,7 +54,7 @@ pub struct State {
     /// deferred.
     input_queue: VecDeque<QueueAction>,
     /// Synchronization between the main thread and the computing thread
-    worker: Option<PlatformWorker<LivingList, LivingList>>,
+    worker: Box<dyn ComputeWorker<LivingList, LivingList>>,
     living_cell_count: usize,
 
     /// These are for the statistics view
@@ -76,6 +78,65 @@ pub struct State {
 
     left_down_at: Option<Instant>,
     moved_since_lmb: Vector2<f64>,
+}
+
+struct DummyWorker<Args: Send, Res: Send> {
+    fun: Box<dyn Fn(Args) -> Res>,
+    result: Option<Res>,
+    computing: bool,
+}
+impl<Args: Send, Res: Send> ComputeWorker<Args, Res>
+    for DummyWorker<Args, Res>
+{
+    fn send(
+        &mut self,
+        data: Args,
+    ) -> Result<bool, crate::platform_impl::PlatformWorkerError> {
+        self.computing = true;
+        if self.result.is_some() {
+            Ok(false)
+        } else {
+            self.result = Some((self.fun)(data));
+            Ok(true)
+        }
+    }
+    fn results(
+        &mut self,
+    ) -> Result<Option<Res>, crate::platform_impl::PlatformWorkerError> {
+        if self.result.is_some() {
+            self.computing = false;
+        }
+        Ok(std::mem::take(&mut self.result))
+    }
+    fn computing(&self) -> bool {
+        self.computing
+    }
+}
+
+impl<Args: Send, Res: Send> DummyWorker<Args, Res> {
+    #[allow(clippy::unnecessary_wraps)]
+    fn new<F: Fn(Args) -> Res + Send + 'static>(
+        fun: F,
+    ) -> Result<Self, PlatformWorkerError> {
+        Ok(Self {
+            fun: Box::new(fun),
+            result: None,
+            computing: false,
+        })
+    }
+}
+
+// If you're on the web AND sharedarraybuffer is not a function
+fn create_worker() -> Box<dyn ComputeWorker<LivingList, LivingList>> {
+    match PlatformWorker::new(compute_step) {
+        Ok(w) => Box::new(w) as Box<dyn ComputeWorker<_, _>>,
+        Err(e) => {
+            log::error!(
+                "Failed creating worker, using dummy worker instead:\n{e:?}"
+            );
+            Box::new(DummyWorker::new(compute_step).unwrap())
+        }
+    }
 }
 
 impl State {
@@ -118,14 +179,14 @@ impl State {
     }
 
     fn handle_scroll(&mut self, delta: MouseScrollDelta) {
+        const PIXEL_MUL: f64 = if cfg!(target_arch = "wasm32") {
+            0.2
+        } else {
+            3.0
+        };
+
         let factor =
             f64::from(self.window.inner_size().height).recip() * 1400.0;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        const PIXEL_MUL: f64 = 3.0;
-
-        #[cfg(target_arch = "wasm32")]
-        const PIXEL_MUL: f64 = 0.2;
 
         let prev_size = self.grid_size;
         let size = self.window.inner_size();
@@ -368,7 +429,7 @@ impl State {
     }
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         let save_file = SaveData::new().unwrap();
-        let worker = PlatformWorker::new(compute_step).ok();
+        let worker = create_worker();
 
         Self {
             pan_position: [0.0, 0.0].into(),

@@ -4,10 +4,7 @@ use std::{
     fs::File,
     io::{Read, Seek, Write},
     marker::PhantomData,
-    sync::{
-        mpsc,
-        RwLock,
-    },
+    sync::{mpsc, RwLock},
 };
 
 type DPResult<T> = Result<T, DataPersistError>;
@@ -63,24 +60,26 @@ where
 
 use super::{Message, PlatformWorker};
 
-impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn new<F: Fn(Args) -> Res + Send + 'static>(
-        fun: F,
-    ) -> Result<Self, PlatformWorkerError> {
-        let (proc_tx, proc_rx) = mpsc::sync_channel(0);
-        let (res_tx, res_rx) = mpsc::sync_channel(1);
-        let _handle = std::thread::spawn(move || {
-            while let Ok(Message::Process(data)) = proc_rx.recv() {
-                if res_tx.send(fun(data)).is_err() {
-                    break;
-                };
-            }
-        });
-        Ok(Self {
-            tx: proc_tx,
-            rx: res_rx,
-            computing: false,
-        })
-    }
+#[allow(clippy::unnecessary_wraps)]
+pub fn new_plat_worker<
+    Args: Send + 'static,
+    Res: Send + 'static,
+    F: Fn(Args) -> Res + Send + 'static,
+>(
+    fun: F,
+) -> Result<PlatformWorker<Args, Res>, PlatformWorkerError> {
+    let (proc_tx, proc_rx) = mpsc::sync_channel(0);
+    let (res_tx, res_rx) = mpsc::sync_channel(1);
+    let _handle = std::thread::spawn(move || {
+        while let Ok(Message::Process(data)) = proc_rx.recv() {
+            if res_tx.send(fun(data)).is_err() {
+                break;
+            };
+        }
+    });
+    Ok(PlatformWorker {
+        tx: proc_tx,
+        rx: res_rx,
+        computing: false,
+    })
 }

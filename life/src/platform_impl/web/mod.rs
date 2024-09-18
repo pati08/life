@@ -64,50 +64,48 @@ use web_sys::Worker;
 
 use super::{Message, PlatformWorker};
 
-impl<Args: Send + 'static + Serialize, Res: Send + 'static>
-    PlatformWorker<Args, Res>
-{
-    // Accepts a JavaScript worker file path and a closure that will be used inside the worker
-    // pub fn new(fun: F) -> Self {
-    pub fn new<F: Fn(Args) -> Res + Send + 'static>(
-        fun: F,
-    ) -> Result<Self, PlatformWorkerError> {
-        let Ok(worker) = Worker::new("/worker.js") else {
-            return Err(PlatformWorkerError::SpawnFailed);
-        };
-        let (proc_tx, proc_rx) = mpsc::sync_channel::<Message<Args>>(0);
-        let (res_tx, res_rx) = mpsc::sync_channel(1);
+pub fn new_plat_worker<
+    Args: Send + 'static,
+    Res: Send + 'static,
+    F: Fn(Args) -> Res + Send + 'static,
+>(
+    fun: F,
+) -> Result<PlatformWorker<Args, Res>, PlatformWorkerError> {
+    let Ok(worker) = Worker::new("/worker.js") else {
+        return Err(PlatformWorkerError::SpawnFailed);
+    };
+    let (proc_tx, proc_rx) = mpsc::sync_channel::<Message<Args>>(0);
+    let (res_tx, res_rx) = mpsc::sync_channel(1);
 
-        let array = js_sys::Array::new();
-        array.push(&wasm_bindgen::module());
-        array.push(&wasm_bindgen::memory());
-        worker
-            .post_message(&array)
-            .map_err(|_e| PlatformWorkerError::MessagePostFailed)?;
-        let work_func = move || {
-            while let Ok(Message::Process(data)) = proc_rx.recv() {
-                if res_tx.send(fun(data)).is_err() {
-                    break;
-                }
+    let array = js_sys::Array::new();
+    array.push(&wasm_bindgen::module());
+    array.push(&wasm_bindgen::memory());
+    worker
+        .post_message(&array)
+        .map_err(|_e| PlatformWorkerError::MessagePostFailed)?;
+    let work_func = move || {
+        while let Ok(Message::Process(data)) = proc_rx.recv() {
+            if res_tx.send(fun(data)).is_err() {
+                break;
             }
-        };
-        let work = Box::new(Work {
-            func: Box::new(work_func),
-        });
-        let ptr = Box::into_raw(work);
-        if worker.post_message(&JsValue::from(ptr as u32)).is_err() {
-            unsafe {
-                drop(Box::from_raw(ptr));
-            }
-            panic!("Failed to post message to web worker");
         }
-
-        Ok(Self {
-            tx: proc_tx,
-            rx: res_rx,
-            computing: false,
-        })
+    };
+    let work = Box::new(Work {
+        func: Box::new(work_func),
+    });
+    let ptr = Box::into_raw(work);
+    if worker.post_message(&JsValue::from(ptr as u32)).is_err() {
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+        panic!("Failed to post message to web worker");
     }
+
+    Ok(PlatformWorker {
+        tx: proc_tx,
+        rx: res_rx,
+        computing: false,
+    })
 }
 
 struct Work {
