@@ -3,8 +3,6 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
-use native as plat_mod;
-#[cfg(not(target_arch = "wasm32"))]
 pub use native::{new_plat_worker, DataHandle};
 
 #[cfg(target_arch = "wasm32")]
