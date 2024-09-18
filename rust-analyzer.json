@@ -1,8 +1,8 @@
 {
     "rust-analyzer": {
-        "cargo": {
-            "target": "wasm32-unknown-unknown"
-        },
+	"cargo": {
+	    "target": "wasm32-unknown-unknown"
+	},
         "check": {
             "command": "clippy"
         },

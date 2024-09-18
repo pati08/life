@@ -19,7 +19,11 @@ use winit::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-use std::sync::{Arc, Mutex};
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc as Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
+use std::sync::Mutex;
 
 mod platform_impl;
 

@@ -1,7 +1,9 @@
-use std::{
-    iter,
-    sync::{Arc, Mutex},
-};
+use std::{iter, sync::Mutex};
+
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc as Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 use winit::window::Window;

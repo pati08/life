@@ -5,7 +5,7 @@ use std::{
     io::{Read, Seek, Write},
     marker::PhantomData,
     sync::{
-        mpsc::{self, Receiver, SyncSender},
+        mpsc,
         RwLock,
     },
 };
@@ -61,13 +61,10 @@ where
     }
 }
 
-pub struct PlatformWorker<Args: Send, Res: Send> {
-    tx: SyncSender<Message<Args>>,
-    rx: Receiver<Res>,
-    computing: bool,
-}
+use super::{Message, PlatformWorker};
 
 impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
+    #[allow(clippy::unnecessary_wraps)]
     pub fn new<F: Fn(Args) -> Res + Send + 'static>(
         fun: F,
     ) -> Result<Self, PlatformWorkerError> {
@@ -85,46 +82,5 @@ impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
             rx: res_rx,
             computing: false,
         })
-    }
-    /// Send some data over to be processed
-    pub fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
-        match self.tx.try_send(Message::Process(data)) {
-            Ok(()) => {
-                self.computing = true;
-                Ok(true)
-            }
-            Err(mpsc::TrySendError::Full(_data)) => Ok(false),
-            Err(mpsc::TrySendError::Disconnected(_data)) => {
-                Err(PlatformWorkerError::Disconnected)
-            }
-        }
-    }
-    /// Get results if they are available, but return immediately if not.
-    pub fn results(&mut self) -> Result<Option<Res>, PlatformWorkerError> {
-        match self.rx.try_recv() {
-            Ok(res) => {
-                self.computing = false;
-                Ok(Some(res))
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                Err(PlatformWorkerError::Disconnected)
-            }
-            Err(mpsc::TryRecvError::Empty) => Ok(None),
-        }
-    }
-    pub fn computing(&self) -> bool {
-        self.computing
-    }
-}
-
-enum Message<Args> {
-    Stop,
-    Process(Args),
-}
-
-// Tell the other thread to stop when this is dropped.
-impl<Args: Send, Res: Send> Drop for PlatformWorker<Args, Res> {
-    fn drop(&mut self) {
-        let _ = self.tx.send(Message::Stop);
     }
 }

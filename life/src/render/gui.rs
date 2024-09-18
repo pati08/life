@@ -3,11 +3,16 @@ use egui::{Color32, Context, Id, RichText, Slider, TexturesDelta, Ui};
 use egui::TextEdit;
 use egui_commonmark::CommonMarkCache;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc as Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
 use ::egui::FontDefinitions;
 use egui_plot::{Line, Plot, VLine};

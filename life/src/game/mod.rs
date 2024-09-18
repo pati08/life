@@ -1,11 +1,17 @@
 use crate::platform_impl::PlatformWorker;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{collections::VecDeque, time::Duration};
+
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc as Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{
@@ -46,7 +52,7 @@ pub struct State {
     /// deferred.
     input_queue: VecDeque<QueueAction>,
     /// Synchronization between the main thread and the computing thread
-    worker: PlatformWorker<LivingList, LivingList>,
+    worker: Option<PlatformWorker<LivingList, LivingList>>,
     living_cell_count: usize,
 
     /// These are for the statistics view
@@ -362,9 +368,7 @@ impl State {
     }
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         let save_file = SaveData::new().unwrap();
-        // TODO: Handle this error gracefully
-        let worker =
-            PlatformWorker::new(compute_step).expect("Failed to create worker");
+        let worker = PlatformWorker::new(compute_step).ok();
 
         Self {
             pan_position: [0.0, 0.0].into(),

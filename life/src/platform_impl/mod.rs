@@ -1,7 +1,9 @@
-#[cfg(not(target_arch = "wasm32"))]
-mod native;
+use std::sync::mpsc::{self, Receiver, SyncSender};
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
 
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -45,6 +47,7 @@ where
     }
 }
 
+#[allow(dead_code)] // Some are platform-specific
 #[derive(Error, Debug)]
 pub enum PlatformWorkerError {
     #[error("Disconnected")]
@@ -53,4 +56,54 @@ pub enum PlatformWorkerError {
     MessagePostFailed,
     #[error("Failed spawning worker or thread")]
     SpawnFailed,
+}
+
+enum Message<Args> {
+    Stop,
+    Process(Args),
+}
+
+pub struct PlatformWorker<Args: Send, Res: Send> {
+    tx: SyncSender<Message<Args>>,
+    rx: Receiver<Res>,
+    computing: bool,
+}
+
+impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
+    /// Send some data over to be processed
+    pub fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
+        match self.tx.try_send(Message::Process(data)) {
+            Ok(()) => {
+                self.computing = true;
+                Ok(true)
+            }
+            Err(mpsc::TrySendError::Full(_data)) => Ok(false),
+            Err(mpsc::TrySendError::Disconnected(_data)) => {
+                Err(PlatformWorkerError::Disconnected)
+            }
+        }
+    }
+    /// Get results if they are available, but return immediately if not.
+    pub fn results(&mut self) -> Result<Option<Res>, PlatformWorkerError> {
+        match self.rx.try_recv() {
+            Ok(res) => {
+                self.computing = false;
+                Ok(Some(res))
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(PlatformWorkerError::Disconnected)
+            }
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+        }
+    }
+    pub fn computing(&self) -> bool {
+        self.computing
+    }
+}
+
+// Tell the other thread to stop when this is dropped.
+impl<Args: Send, Res: Send> Drop for PlatformWorker<Args, Res> {
+    fn drop(&mut self) {
+        let _ = self.tx.send(Message::Stop);
+    }
 }
