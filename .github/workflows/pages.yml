@@ -41,14 +41,14 @@ jobs:
         with:
           flakes-from-devshell: true
           script: |
-            just pages-ci
+            just build-web-release
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           # Upload dist directory
-          path: './dist/assets'
+          path: './dist'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

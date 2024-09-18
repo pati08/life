@@ -51,6 +51,6 @@ pub enum PlatformWorkerError {
     Disconnected,
     #[error("Failed to post message to web worker")]
     MessagePostFailed,
-    #[error("Serialization error")]
-    SerFailed,
+    #[error("Failed spawning worker or thread")]
+    SpawnFailed,
 }

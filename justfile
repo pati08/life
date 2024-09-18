@@ -1,24 +1,29 @@
 build-web:
     rm -rf dist
-    rm -rf www/dist
-    wasm-pack build life --debug
-    cd www && npm install && npm run build
     mkdir dist
-    cp -r www/dist/* dist/
+    RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" wasm-pack build life --target no-modules --debug --out-dir ../dist -- -Zbuild-std=std,panic_abort
+    # RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" cargo build --target wasm32-unknown-unknown -Zbuild-std=std,panic_abort -p life
+    # wasm-bindgen \
+    #     ./target/wasm32-unknown-unknown/debug/life.wasm \
+    #     --out-dir \
+    #     ./dist \
+    #     --target \
+    #     no-modules
+    cp index.js dist
+    cp index.html dist
+    cp worker.js dist
 
 build-web-release:
     rm -rf dist
-    rm -rf www/dist
-    wasm-pack build life --release
-    cd www && npm install && npm run build
     mkdir dist
-    cp -r www/dist/* dist/
-
-# The same as build-web-release, but without building the server
-pages-ci:
-    rm -rf dist
-    rm -rf www/dist
-    wasm-pack build life --release
-    cd www && npm install && npm run build
-    mkdir dist
-    cp -r www/dist dist/assets
+    RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" wasm-pack build life --target no-modules --release --out-dir ../dist -- -Zbuild-std=std,panic_abort
+    # RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" cargo build --target wasm32-unknown-unknown -Zbuild-std=std,panic_abort -p life
+    # wasm-bindgen \
+    #     ./target/wasm32-unknown-unknown/debug/life.wasm \
+    #     --out-dir \
+    #     ./dist \
+    #     --target \
+    #     no-modules
+    cp index.js dist
+    cp index.html dist
+    cp worker.js dist

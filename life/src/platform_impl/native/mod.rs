@@ -68,7 +68,9 @@ pub struct PlatformWorker<Args: Send, Res: Send> {
 }
 
 impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
-    pub fn new<F: Fn(Args) -> Res + Send + 'static>(fun: F) -> Self {
+    pub fn new<F: Fn(Args) -> Res + Send + 'static>(
+        fun: F,
+    ) -> Result<Self, PlatformWorkerError> {
         let (proc_tx, proc_rx) = mpsc::sync_channel(0);
         let (res_tx, res_rx) = mpsc::sync_channel(1);
         let _handle = std::thread::spawn(move || {
@@ -78,11 +80,11 @@ impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
                 };
             }
         });
-        Self {
+        Ok(Self {
             tx: proc_tx,
             rx: res_rx,
             computing: false,
-        }
+        })
     }
     /// Send some data over to be processed
     pub fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
@@ -109,18 +111,6 @@ impl<Args: Send + 'static, Res: Send + 'static> PlatformWorker<Args, Res> {
             }
             Err(mpsc::TryRecvError::Empty) => Ok(None),
         }
-    }
-    // This function is not currently used but may become useful in the future.
-    /// Blocks until results are available.
-    pub fn wait_results(&mut self) -> Result<Res, PlatformWorkerError> {
-        let res = self
-            .rx
-            .recv()
-            .map_err(|_| PlatformWorkerError::Disconnected);
-        if res.is_ok() {
-            self.computing = false;
-        }
-        res
     }
     pub fn computing(&self) -> bool {
         self.computing

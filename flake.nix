@@ -55,7 +55,9 @@
               cmake
 
               wasm-pack
-              nodejs
+              binaryen
+              wasm-bindgen-cli
+              # nodejs
 
               # command automation
               just

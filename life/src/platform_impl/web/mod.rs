@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
 use super::{DataPersistError, PlatformWorkerError};
-use js_sys::Uint8Array;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
+use web_sys::DedicatedWorkerGlobalScope;
 use web_sys::Storage;
 
 type DPResult<T> = Result<T, DataPersistError>;
@@ -58,67 +60,71 @@ where
 }
 
 use std::sync::mpsc;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::{MessageEvent, Worker as WebWorker};
-
-mod workers;
+use web_sys::Worker;
 
 // Adjusted PlatformWorker struct without type generics
-pub struct PlatformWorker<Args: Serialize, Res> {
+pub struct PlatformWorker<Args, Res> {
+    tx: mpsc::SyncSender<Message<Args>>,
     rx: mpsc::Receiver<Res>,
-    worker: WebWorker,
     computing: bool,
-    _phantom_data: PhantomData<Args>,
 }
 
-impl<
-        Args: for<'de> Deserialize<'de> + 'static + Serialize,
-        Res: for<'de> Deserialize<'de> + 'static,
-    > PlatformWorker<Args, Res>
+impl<Args: Send + 'static + Serialize, Res: Send + 'static>
+    PlatformWorker<Args, Res>
 {
     // Accepts a JavaScript worker file path and a closure that will be used inside the worker
-    pub fn new() -> Self {
-        let worker =
-            WebWorker::new(worker_url).expect("Failed to create web worker");
-
+    // pub fn new(fun: F) -> Self {
+    pub fn new<F: Fn(Args) -> Res + Send + 'static>(
+        fun: F,
+    ) -> Result<Self, PlatformWorkerError> {
+        let Ok(worker) = Worker::new("/worker.js") else {
+            return Err(PlatformWorkerError::SpawnFailed);
+        };
+        let (proc_tx, proc_rx) = mpsc::sync_channel::<Message<Args>>(0);
         let (res_tx, res_rx) = mpsc::sync_channel(1);
 
-        // Worker message handler to receive results from the worker
-        let closure = Closure::wrap(Box::new(move |event: MessageEvent| {
-            let result = event.data();
-            let data =
-                bincode::deserialize(&Uint8Array::from(result).to_vec()[..])
-                    .unwrap();
-            res_tx.send(data).expect("Failed to send result");
-        }) as Box<dyn FnMut(_)>);
-
-        worker.set_onmessage(Some(closure.as_ref().unchecked_ref()));
-        closure.forget(); // Prevent closure from being dropped
-
-        Self {
-            rx: res_rx,
-            worker,
-            computing: false,
-            _phantom_data: PhantomData,
+        let array = js_sys::Array::new();
+        array.push(&wasm_bindgen::module());
+        array.push(&wasm_bindgen::memory());
+        worker
+            .post_message(&array)
+            .map_err(|_e| PlatformWorkerError::MessagePostFailed)?;
+        let work_func = move || {
+            while let Ok(Message::Process(data)) = proc_rx.recv() {
+                if res_tx.send(fun(data)).is_err() {
+                    break;
+                }
+            }
+        };
+        let work = Box::new(Work {
+            func: Box::new(work_func),
+        });
+        let ptr = Box::into_raw(work);
+        if worker.post_message(&JsValue::from(ptr as u32)).is_err() {
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+            panic!("Failed to post message to web worker");
         }
+
+        Ok(Self {
+            tx: proc_tx,
+            rx: res_rx,
+            computing: false,
+        })
     }
 
     /// Send data to be processed by the worker
     pub fn send(&mut self, data: Args) -> Result<bool, PlatformWorkerError> {
-        if self.computing {
-            return Ok(false); // Already computing
-        }
-
-        let Ok(data) = bincode::serialize(&Message::Process(data)) else {
-            return Err(PlatformWorkerError::SerFailed);
-        };
-
-        if self.worker.post_message(&JsValue::from(data)).is_err() {
-            Err(PlatformWorkerError::MessagePostFailed)
-        } else {
-            self.computing = true;
-            Ok(true)
+        match self.tx.try_send(Message::Process(data)) {
+            Ok(()) => {
+                self.computing = true;
+                Ok(true)
+            }
+            Err(mpsc::TrySendError::Full(_data)) => Ok(false),
+            Err(mpsc::TrySendError::Disconnected(_data)) => {
+                Err(PlatformWorkerError::Disconnected)
+            }
         }
     }
 
@@ -136,76 +142,33 @@ impl<
         }
     }
 
-    /// Blocks until results are available.
-    pub fn wait_results(&mut self) -> Result<Res, PlatformWorkerError> {
-        let res = self
-            .rx
-            .recv()
-            .map_err(|_| PlatformWorkerError::Disconnected);
-        if res.is_ok() {
-            self.computing = false;
-        }
-        res
-    }
-
     pub fn computing(&self) -> bool {
         self.computing
     }
 }
 
 // Simple message enum to manage worker messages
-#[derive(Deserialize, Serialize)]
-enum Message<Args, Res> {
+enum Message<Args> {
     Stop,
     Process(Args),
-    Load(Closure<dyn Fn(Args) -> Res>),
 }
-
-impl<Args: Serialize, Res> From<Message<Args, Res>> for JsValue {
-    fn from(value: Message<Args, Res>) -> Self {
-        use js_sys::Reflect::set;
-        let mut obj = js_sys::Object::new();
-        match value {
-            Message::Stop => {
-                set(&obj, &JsValue::from("variant"), &JsValue::from("Stop"));
-            }
-            Message::Process(v) => {
-                let bytes = bincode::serialize(&v).unwrap();
-                set(&obj, &JsValue::from("variant"), &JsValue::from("Process"));
-                set(&obj, &JsValue::from("args"), &JsValue::from(bytes));
-            }
-            Message::Load(v) => {
-                set(&obj, &JsValue::from("variant"), &JsValue::from("Load"));
-                set(&obj, &JsValue::from("closure"), &v.as_ref());
-            }
-        }
-        // set(&obj, &JsValue::from("variant"), &JsValue::from(match ))
-        obj.into()
-    }
-}
-
-impl<Args: Serialize, Res> TryFrom<JsValue> for Message<Args, Res> {
-    type Error = ();
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        use js_sys::Reflect::get;
-        let variant = get(&value, &JsValue::from("variant")).map_err(|_| ())?;
-        let Some(variant) = variant.as_string() else { return Err(()) };
-        match variant {
-            "Stop" => Message::Stop,
-            "Process" => {
-                let args = get(&value, &JsValue::from("args"))
-            }
-        }
-    }
-}
-
-// Automatically stop the worker when the struct is dropped
-impl<Args: Serialize, Res> Drop for PlatformWorker<Args, Res> {
+// // Automatically stop the worker when the struct is dropped
+impl<Args, Res> Drop for PlatformWorker<Args, Res> {
     fn drop(&mut self) {
-        let js_val = JsValue::from(
-            bincode::serialize(&Message::<Args, Res>::Stop).unwrap(),
-        );
-        let _ = self.worker.post_message(&js_val);
-        self.worker.terminate();
+        let _ = self.tx.send(Message::Stop);
     }
+}
+
+struct Work {
+    func: Box<dyn FnOnce() + Send>,
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub fn child_entry_point(ptr: u32) -> Result<(), JsValue> {
+    let ptr = unsafe { Box::from_raw(ptr as *mut Work) };
+    let global =
+        js_sys::global().unchecked_into::<DedicatedWorkerGlobalScope>();
+    (ptr.func)();
+    global.post_message(&JsValue::undefined())?;
+    Ok(())
 }

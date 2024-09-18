@@ -362,7 +362,9 @@ impl State {
     }
     pub fn new(window: Arc<Window>, grid_size: f32) -> Self {
         let save_file = SaveData::new().unwrap();
-        let worker = PlatformWorker::new(compute_step);
+        // TODO: Handle this error gracefully
+        let worker =
+            PlatformWorker::new(compute_step).expect("Failed to create worker");
 
         Self {
             pan_position: [0.0, 0.0].into(),
@@ -380,8 +382,8 @@ impl State {
             changes: StateChanges::default(),
             toggle_record: Vec::new(),
             save_file: Some(save_file),
-            #[cfg(target_arch = "wasm32")]
-            scroll_mode: Default::default(),
+            // #[cfg(target_arch = "wasm32")]
+            // scroll_mode: Default::default(),
             left_down_at: None,
             moved_since_lmb: Vector2::default(),
         }
@@ -517,10 +519,6 @@ impl LoopState {
     }
 }
 
-#[cfg_attr(
-    not(any(feature = "native_threads", feature = "gloo_threads")),
-    allow(dead_code)
-)]
 enum QueueAction {
     Clear,
     Toggle(Vector2<i32>),

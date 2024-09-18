@@ -1,0 +1,12 @@
+# static-web-server configuration file
+
+[general]
+host = "0.0.0.0"
+port = 8000
+
+[advanced]
+[[advanced.headers]]
+source = "*"
+[advanced.headers.headers]
+"Cross-Origin-Opener-Policy" = "same-origin"
+"Cross-Origin-Embedder-Policy" = "require-corp"
