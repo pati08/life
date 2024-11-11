@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "life",
+    "hexchess-core", "hexchess-server",
     "vec2",
 ]
 resolver = "2"

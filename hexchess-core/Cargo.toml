@@ -1,5 +1,5 @@
 [package]
-name = "life"
+name = "hexchess-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,7 +16,6 @@ bytemuck = { version = "1.15.0", features = ["derive"] }
 anyhow = "1.0"
 # cfg-if = "1.0"
 # itertools = "0.12.1"
-vec2 = { path = "../vec2" }
 rustc-hash = "1.1"
 egui = { version = "0.27", features = ["log"] }
 epi = "0.17"
